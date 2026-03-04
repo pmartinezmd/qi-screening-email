@@ -1,0 +1,12 @@
+# Credentials
+.env
+
+# All patient data and operational files — never commit
+data/*.xlsx
+data/*.xls
+data/*.csv
+output/
+
+# Python
+__pycache__/
+*.pyc

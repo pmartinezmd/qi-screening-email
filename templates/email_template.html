@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ screening_name }} · Bimonthly Update</title>
+</head>
+<body style="margin:0;padding:0;background:#f8f6f2;font-family:'DM Sans',Arial,sans-serif;color:#1a1a2e;">
+
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f8f6f2;">
+<tr><td align="center" style="padding:32px 16px 48px;">
+
+  <table width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
+
+    <!-- ── HEADER ─────────────────────────────────────────────────── -->
+    <tr>
+      <td style="background:#1a1a2e;padding:28px 32px 24px;border-radius:4px 4px 0 0;">
+        <p style="margin:0 0 4px;font-size:10px;font-weight:700;letter-spacing:0.2em;text-transform:uppercase;color:#7a7a8a;">
+          {{ team_label }}
+        </p>
+        <p style="margin:0 0 2px;font-family:Georgia,'DM Serif Display',serif;font-size:22px;color:#ffffff;line-height:1.2;">
+          {{ screening_name }} Update
+        </p>
+        <p style="margin:0;font-size:12px;color:#7a7a8a;">
+          {{ period_label }} &nbsp;·&nbsp; Bimonthly Report
+        </p>
+      </td>
+    </tr>
+
+    <!-- ── GREETING ───────────────────────────────────────────────── -->
+    <tr>
+      <td style="background:#ffffff;padding:28px 32px 20px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <p style="margin:0;font-size:14px;color:#1a1a2e;line-height:1.6;">
+          Hi {{ display_name }},
+        </p>
+        <p style="margin:12px 0 0;font-size:13px;color:#7a7a8a;line-height:1.6;">
+          Here is your screening summary for {{ period_label }}.
+          Results are based on EMR chart audit — complete screening requires
+          all configured components to be documented within the past 12 months.
+        </p>
+      </td>
+    </tr>
+
+    <!-- ── YOUR RATE CARD ─────────────────────────────────────────── -->
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 28px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background:#f8f6f2;border:1px solid #e0dbd3;border-left:4px solid {{ rate_color }};border-radius:0 4px 4px 0;padding:20px 24px;">
+              <p style="margin:0;font-family:'Courier New',monospace;font-size:48px;font-weight:700;color:{{ rate_color }};line-height:1;">
+                {{ screening_rate }}%
+              </p>
+              <p style="margin:6px 0 0;font-size:12px;color:#1a1a2e;font-weight:600;">
+                Your screening completion rate
+              </p>
+              <p style="margin:4px 0 0;font-size:11px;color:#7a7a8a;">
+                {{ screened_patients }} of {{ eligible_patients }} eligible patients fully screened
+                &nbsp;·&nbsp;
+                <span style="color:{{ rate_color }};font-weight:600;">Target ≥80%</span>
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- ── TOP PERFORMER BANNER ──────────────────────────────────── -->
+    {% if is_top_performer %}
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 20px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background:#f0faf2;border:1px solid #3a7d44;border-left:4px solid #3a7d44;border-radius:0 4px 4px 0;padding:14px 18px;">
+              <p style="margin:0;font-size:13px;font-weight:700;color:#3a7d44;">
+                Congratulations — highest score this period!
+              </p>
+              <p style="margin:4px 0 0;font-size:12px;color:#1a1a2e;line-height:1.6;">
+                Your {{ screening_rate }}% completion rate is the best on the team this period. Thank you for leading by example.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    {% endif %}
+
+    <!-- ── COMPARISON BARS ────────────────────────────────────────── -->
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 28px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <p style="margin:0 0 14px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
+          How you compare
+        </p>
+
+        <!-- Your rate -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:10px;">
+          <tr>
+            <td width="90" style="font-size:11px;color:#1a1a2e;font-weight:600;padding-right:10px;vertical-align:middle;">
+              You
+            </td>
+            <td style="vertical-align:middle;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  {% if screening_rate > 0 %}<td width="{{ screening_rate|int }}%" style="width:{{ screening_rate|int }}%;background:{{ rate_color }};height:18px;border-radius:2px 0 0 2px;font-size:0;">&nbsp;</td>{% endif %}
+                  <td style="background:#e0dbd3;height:18px;border-radius:{% if screening_rate > 0 %}0 2px 2px 0{% else %}2px{% endif %};font-size:0;">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+            <td width="42" style="font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:{{ rate_color }};padding-left:10px;vertical-align:middle;white-space:nowrap;">
+              {{ screening_rate }}%
+            </td>
+          </tr>
+        </table>
+
+        <!-- Group average -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:10px;">
+          <tr>
+            <td width="90" style="font-size:11px;color:#7a7a8a;padding-right:10px;vertical-align:middle;">
+              {{ provider_type_label }} avg<br>
+              <span style="font-size:10px;">({{ group_n }} providers)</span>
+            </td>
+            <td style="vertical-align:middle;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  {% if group_avg > 0 %}<td width="{{ group_avg|int }}%" style="width:{{ group_avg|int }}%;background:#2d6a8f;height:18px;border-radius:2px 0 0 2px;font-size:0;">&nbsp;</td>{% endif %}
+                  <td style="background:#e0dbd3;height:18px;border-radius:{% if group_avg > 0 %}0 2px 2px 0{% else %}2px{% endif %};font-size:0;">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+            <td width="42" style="font-family:'Courier New',monospace;font-size:12px;color:#2d6a8f;padding-left:10px;vertical-align:middle;white-space:nowrap;">
+              {{ group_avg }}%
+            </td>
+          </tr>
+        </table>
+
+        <!-- Other group average -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:10px;">
+          <tr>
+            <td width="90" style="font-size:11px;color:#7a7a8a;padding-right:10px;vertical-align:middle;">
+              {{ other_type_label }} avg<br>
+              <span style="font-size:10px;">({{ other_n }} providers)</span>
+            </td>
+            <td style="vertical-align:middle;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  {% if other_avg > 0 %}<td width="{{ other_avg|int }}%" style="width:{{ other_avg|int }}%;background:#7a7a8a;height:18px;border-radius:2px 0 0 2px;font-size:0;">&nbsp;</td>{% endif %}
+                  <td style="background:#e0dbd3;height:18px;border-radius:{% if other_avg > 0 %}0 2px 2px 0{% else %}2px{% endif %};font-size:0;">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+            <td width="42" style="font-family:'Courier New',monospace;font-size:12px;color:#7a7a8a;padding-left:10px;vertical-align:middle;white-space:nowrap;">
+              {{ other_avg }}%
+            </td>
+          </tr>
+        </table>
+
+        <!-- Target line -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="90" style="font-size:11px;color:#e8a838;font-weight:600;padding-right:10px;vertical-align:middle;">
+              Target
+            </td>
+            <td style="vertical-align:middle;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="80%" style="width:80%;border-bottom:2px dashed #e8a838;height:9px;font-size:0;">&nbsp;</td>
+                  <td style="height:9px;font-size:0;">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+            <td width="42" style="font-family:'Courier New',monospace;font-size:12px;color:#e8a838;font-weight:700;padding-left:10px;vertical-align:middle;white-space:nowrap;">
+              80%
+            </td>
+          </tr>
+        </table>
+
+        <p style="margin:12px 0 0;font-size:10px;color:#7a7a8a;font-style:italic;">
+          Provider names are not shared. Group averages only.
+        </p>
+      </td>
+    </tr>
+
+    <!-- ── MISSING COMPONENTS ─────────────────────────────────────── -->
+    {% if top_missing_1 %}
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 28px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <p style="margin:0 0 14px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
+          Most commonly missing — your patients
+        </p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px;">
+          <tr>
+            <td width="8" style="background:#c1440e;border-radius:2px;width:4px;font-size:0;">&nbsp;</td>
+            <td style="padding-left:12px;">
+              <p style="margin:0;font-size:13px;color:#1a1a2e;font-weight:600;">{{ top_missing_1 }}</p>
+              <p style="margin:2px 0 0;font-size:11px;color:#7a7a8a;">Missing in {{ missing_count_1 }} patient{{ 's' if missing_count_1 != 1 else '' }}</p>
+            </td>
+          </tr>
+        </table>
+
+        {% if top_missing_2 %}
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px;">
+          <tr>
+            <td width="8" style="background:#e8a838;border-radius:2px;width:4px;font-size:0;">&nbsp;</td>
+            <td style="padding-left:12px;">
+              <p style="margin:0;font-size:13px;color:#1a1a2e;font-weight:600;">{{ top_missing_2 }}</p>
+              <p style="margin:2px 0 0;font-size:11px;color:#7a7a8a;">Missing in {{ missing_count_2 }} patient{{ 's' if missing_count_2 != 1 else '' }}</p>
+            </td>
+          </tr>
+        </table>
+        {% endif %}
+      </td>
+    </tr>
+
+    <!-- ── NUDGE ──────────────────────────────────────────────────── -->
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 32px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background:#fffdf5;border:1px solid #e8a838;border-left:4px solid #e8a838;border-radius:0 4px 4px 0;padding:14px 18px;">
+              <p style="margin:0;font-size:12px;color:#1a1a2e;line-height:1.6;">
+                Addressing <strong>{{ top_missing_1 }}{% if top_missing_2 %}</strong> and <strong>{{ top_missing_2 }}{% endif %}</strong>
+                for your outstanding patients could meaningfully move your rate toward the 80% target.
+                {% if dashboard_url %}
+                <a href="{{ dashboard_url }}" style="color:#2d6a8f;">View the full run chart dashboard →</a>
+                {% endif %}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    {% else %}
+    <!-- No missing components -->
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 32px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background:#f0faf2;border:1px solid #3a7d44;border-left:4px solid #3a7d44;border-radius:0 4px 4px 0;padding:14px 18px;">
+              <p style="margin:0;font-size:12px;color:#1a1a2e;line-height:1.6;">
+                All eligible patients on your panel are fully screened this period. Thank you!
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    {% endif %}
+
+    <!-- ── FAQ ───────────────────────────────────────────────────── -->
+    <tr>
+      <td style="background:#f8f6f2;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;border-top:1px solid #e0dbd3;padding:24px 32px 8px;">
+        <p style="margin:0 0 16px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
+          Frequently Asked Questions
+        </p>
+
+        <!-- Q1 -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">
+          <tr>
+            <td style="padding-bottom:4px;">
+              <p style="margin:0;font-size:12px;font-weight:700;color:#1a1a2e;">
+                Which patients are included in my count?
+              </p>
+              <p style="margin:4px 0 0;font-size:11px;color:#7a7a8a;line-height:1.7;">
+                Patients with the <strong style="color:#1a1a2e;">target diagnosis</strong> for this QI project
+                where you are listed as the <strong style="color:#1a1a2e;">Encounter Provider</strong>.
+                Only clinic and office visits are included. Patients must be alive at the time of the report.
+                Contact the QI team if you have questions about your patient list.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Q2 -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">
+          <tr>
+            <td style="padding-bottom:4px;">
+              <p style="margin:0;font-size:12px;font-weight:700;color:#1a1a2e;">
+                What counts as a complete screening?
+              </p>
+              <p style="margin:4px 0 0;font-size:11px;color:#7a7a8a;line-height:1.7;">
+                All configured screening components must be documented within the
+                <strong style="color:#1a1a2e;">past 12 months</strong>.
+                A patient counts as fully screened only when every component has a recorded result in the EMR.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Q3 -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">
+          <tr>
+            <td style="padding-bottom:4px;">
+              <p style="margin:0;font-size:12px;font-weight:700;color:#1a1a2e;">
+                How do I update missing data for a patient?
+              </p>
+              <p style="margin:4px 0 0;font-size:11px;color:#7a7a8a;line-height:1.7;">
+                Order or document the missing component at the patient's next visit.
+                Labs ordered in the outpatient setting will populate automatically.
+                Use structured EMR fields — free-text notes do not count.
+                Updates will be reflected in the next report.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Q4 -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+          <tr>
+            <td style="padding-bottom:4px;">
+              <p style="margin:0;font-size:12px;font-weight:700;color:#1a1a2e;">
+                How often is this report sent, and what period does it cover?
+              </p>
+              <p style="margin:4px 0 0;font-size:11px;color:#7a7a8a;line-height:1.7;">
+                Reports are sent <strong style="color:#1a1a2e;">every two months</strong>. Each report reflects a
+                snapshot of your entire active panel — not just patients seen in the reporting period.
+                A patient counts as screened if all components are on file within the 12 months
+                preceding the report date.
+              </p>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+
+    <!-- ── FOOTER ─────────────────────────────────────────────────── -->
+    <tr>
+      <td style="background:#f8f6f2;border:1px solid #e0dbd3;border-top:none;border-radius:0 0 4px 4px;padding:20px 32px;">
+        <p style="margin:0;font-size:11px;color:#7a7a8a;line-height:1.6;">
+          Sent by the <strong style="color:#1a1a2e;">{{ team_label }}</strong><br>
+          Questions or data corrections? Reply to this email.<br>
+          <span style="font-size:10px;">This report is generated from EMR audit data and is intended for quality improvement purposes only.</span>
+        </p>
+      </td>
+    </tr>
+
+  </table>
+</td></tr>
+</table>
+
+</body>
+</html>

@@ -1,0 +1,6 @@
+pandas
+jinja2
+python-dotenv
+openpyxl
+msoffcrypto-tool
+streamlit>=1.32

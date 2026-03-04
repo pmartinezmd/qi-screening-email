@@ -1,0 +1,4 @@
+provider_id,display_name,email,provider_type
+SMITH, JANE A,Dr. Jane Smith,jsmith@institution.edu,attending
+DOE, JOHN B,Dr. John Doe,jdoe@institution.edu,fellow
+LEE, SARAH C,Dr. Sarah Lee,slee@institution.edu,attending
