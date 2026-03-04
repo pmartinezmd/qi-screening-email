@@ -235,23 +235,15 @@ def _build_data_config() -> DataConfig:
     )
 
 
-def _generate_summary_template(target_rate: int, provider_col: str) -> bytes:
+def _generate_summary_template(provider_col: str, components: list) -> bytes:
     """Return a 2-sheet Excel workbook for provider-level summary data input.
 
-    Sheet 1 'Summary'  — one row per provider with aggregate stats.
-    Sheet 2 'Patient List' — optional; one row per unscreened patient.
+    Sheet 1 'Summary'  — Provider | Eligible Patients | Screened | [one col per component]
+    Sheet 2 'Patient List' — optional; Provider | Patient Name (unscreened patients)
     """
-    eligible_ex   = 20
-    screened_pct_ex = 65.0
-    target_no_ex  = round(eligible_ex * target_rate / 100)
-
-    summary_df = pd.DataFrame([{
-        provider_col:        "SMITH, JANE A",
-        "Eligible Patients": eligible_ex,
-        "Screened %":        screened_pct_ex,
-        "Target No.":        target_no_ex,
-        "Target %":          target_rate,
-    }])
+    example: dict = {provider_col: "SMITH, JANE A", "Eligible Patients": 20, "Screened": 13}
+    for comp in components:
+        example[comp.label] = 16  # example screened count for this component
 
     patient_df = pd.DataFrame([
         {provider_col: "SMITH, JANE A", "Patient Name": "JONES, ROBERT"},
@@ -260,7 +252,7 @@ def _generate_summary_template(target_rate: int, provider_col: str) -> bytes:
 
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        summary_df.to_excel(writer, index=False, sheet_name="Summary")
+        pd.DataFrame([example]).to_excel(writer, index=False, sheet_name="Summary")
         patient_df.to_excel(writer, index=False, sheet_name="Patient List")
     return buf.getvalue()
 
@@ -281,7 +273,7 @@ def _generate_patient_list_template(provider_col: str) -> bytes:
 
 def _validate_summary_columns(df: pd.DataFrame, provider_col: str) -> list[str]:
     """Return column names expected in the Summary sheet but missing from df."""
-    required = [provider_col, "Eligible Patients", "Screened %", "Target No.", "Target %"]
+    required = [provider_col, "Eligible Patients", "Screened"]
     return [c for c in required if c not in df.columns]
 
 
@@ -333,34 +325,51 @@ def _process_summary_format(
     df_patients: pd.DataFrame | None,
     providers_df: pd.DataFrame | None,
     provider_col: str,
+    components: list,
 ) -> pd.DataFrame:
-    """Process provider-level summary sheet into the standard processed_summary schema."""
+    """Process provider-level summary sheet into the standard processed_summary schema.
+
+    Required columns: provider_col, 'Eligible Patients', 'Screened'
+    Optional columns: one per component label (screened count for that measure)
+    """
     rows = []
     for _, row in df_summary.iterrows():
         raw         = str(row[provider_col]).strip()
         provider_id = parse_provider(raw)
         eligible    = int(row["Eligible Patients"])
-        screened_pct = float(row["Screened %"])
-        target_no   = int(row.get("Target No.", 0) or 0)
-        screened    = round(screened_pct / 100 * eligible)
-        gap         = max(0, target_no - screened)
+        screened    = int(row["Screened"])
+        screening_rate = round(screened / eligible * 100, 1) if eligible > 0 else 0.0
 
+        # Per-component gaps → find top 2 most-missing to surface in email
+        comp_gaps: list[tuple[str, int]] = []
+        for comp in components:
+            if comp.label in row.index and not pd.isna(row[comp.label]):
+                comp_screened = int(row[comp.label])
+                gap = eligible - comp_screened
+                if gap > 0:
+                    comp_gaps.append((comp.label, gap))
+        comp_gaps.sort(key=lambda x: -x[1])
+
+        top_missing_1  = comp_gaps[0][0] if comp_gaps else None
+        top_missing_2  = comp_gaps[1][0] if len(comp_gaps) > 1 else None
+        missing_count_1 = comp_gaps[0][1] if comp_gaps else max(0, eligible - screened)
+        missing_count_2 = comp_gaps[1][1] if len(comp_gaps) > 1 else 0
+
+        # Unscreened patient names from optional Patient List sheet
         patient_names: list[str] = []
         if df_patients is not None and not df_patients.empty and provider_col in df_patients.columns:
             mask          = df_patients[provider_col].astype(str).str.strip() == raw
             patient_names = df_patients[mask]["Patient Name"].dropna().astype(str).tolist()
 
-        patient_count = len(patient_names) if patient_names else gap
-
         rows.append({
             "provider_id":        provider_id,
             "eligible_patients":  eligible,
             "screened_patients":  screened,
-            "screening_rate":     round(screened_pct, 1),
-            "top_missing_1":      None,
-            "top_missing_2":      None,
-            "missing_count_1":    patient_count,
-            "missing_count_2":    0,
+            "screening_rate":     screening_rate,
+            "top_missing_1":      top_missing_1,
+            "top_missing_2":      top_missing_2,
+            "missing_count_1":    missing_count_1,
+            "missing_count_2":    missing_count_2,
             "patients_to_screen": ", ".join(patient_names),
         })
 
@@ -392,20 +401,24 @@ with tab1:
         with tpl_col1:
             st.markdown("**Provider summary** *(pre-aggregated)*")
             st.caption(
-                "Use this when your EMR report already shows totals per provider: "
-                "number of eligible patients, % screened, and target. "
+                "Use this when your EMR report already shows totals per provider. "
+                "Fill in the count of eligible and screened patients. "
+                "Component columns (from the sidebar) are optional but enable gap analysis. "
                 "Optionally list specific unscreened patients in the second sheet."
             )
+            _data_config_tpl = _build_data_config()
+            _comp_labels     = [c.label for c in _data_config_tpl.components]
             st.download_button(
                 label="⬇️ Summary template (.xlsx)",
-                data=_generate_summary_template(cfg_target_rate, cfg_provider_col),
+                data=_generate_summary_template(cfg_provider_col, _data_config_tpl.components),
                 file_name="screening_summary_template.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
             st.caption(
-                f"Sheet 1 — `{cfg_provider_col}`, `Eligible Patients`, `Screened %`, `Target No.`, `Target %`  \n"
-                f"Sheet 2 *(optional)* — `{cfg_provider_col}`, `Patient Name`"
+                f"Sheet 1 — `{cfg_provider_col}`, `Eligible Patients`, `Screened`"
+                + (f", " + ", ".join(f"`{l}`" for l in _comp_labels) if _comp_labels else " *(+ optional component columns)*")
+                + f"  \nSheet 2 *(optional)* — `{cfg_provider_col}`, `Patient Name`"
             )
 
         with tpl_col2:
@@ -487,7 +500,10 @@ with tab1:
                 st.stop()
 
             with st.spinner("Calculating screening rates…"):
-                summary = _process_summary_format(df_summary, df_patients, providers_df, cfg_provider_col)
+                summary = _process_summary_format(
+                    df_summary, df_patients, providers_df,
+                    cfg_provider_col, _build_data_config().components,
+                )
 
         elif "Patient List" in sheets:
             # ── Patient list format (1 row per patient, 1/0 flag) ─────────────
