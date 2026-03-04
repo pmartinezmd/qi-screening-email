@@ -23,6 +23,7 @@ import re
 import sys
 import os
 import pandas as pd
+from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -95,6 +96,105 @@ COMPONENT_LABELS = {
     "bmi":     "BMI",
     "a1c":     "HbA1c",
 }
+
+
+# ── Generic processing (used by the Streamlit app) ────────────────────────────
+
+@dataclass
+class ComponentDef:
+    """One screening component as configured in the app sidebar / secrets."""
+    key: str       # slug used in CSV column names, e.g. "lipids"
+    label: str     # human label = also the Excel template column header
+    has_date: bool = False  # if True, expects a "{label} Date" column
+
+@dataclass
+class DataConfig:
+    """Full configuration for one QI project's processing run."""
+    provider_col: str
+    problems_col: str
+    diagnosis_keywords: list[str]        # case-insensitive substring match
+    components: list[ComponentDef]
+    lookback_days: int = 365
+
+
+def _has_value(val) -> bool:
+    """True if the cell contains a meaningful documented value."""
+    if pd.isna(val):
+        return False
+    return str(val).strip().lower() not in ("", "n/a", "null", "unknown",
+                                            "never assessed", "not documented")
+
+
+def _within_n_days(date_val, lookback_days: int) -> bool:
+    if pd.isna(date_val):
+        return False
+    try:
+        d = pd.Timestamp(date_val)
+        report_date = pd.Timestamp.today().normalize()
+        return 0 <= (report_date - d).days <= lookback_days
+    except Exception:
+        return False
+
+
+def assess_row_generic(row: pd.Series, config: DataConfig) -> dict:
+    results = {}
+    for comp in config.components:
+        val = row.get(comp.label)
+        if not _has_value(val):
+            results[comp.key] = False
+        elif comp.has_date:
+            results[comp.key] = _within_n_days(
+                row.get(f"{comp.label} Date"), config.lookback_days
+            )
+        else:
+            results[comp.key] = True
+    results["complete"] = all(results[c.key] for c in config.components)
+    return results
+
+
+def aggregate_by_provider_generic(df: pd.DataFrame, config: DataConfig) -> pd.DataFrame:
+    df = df.copy()
+    df["_provider"] = df[config.provider_col].apply(parse_provider)
+
+    records = []
+    for provider, group in df.groupby("_provider"):
+        assessments = group.apply(
+            lambda row: assess_row_generic(row, config), axis=1
+        ).tolist()
+
+        n_total    = len(assessments)
+        n_complete = sum(a["complete"] for a in assessments)
+        rate       = round(n_complete / n_total * 100, 1) if n_total > 0 else 0.0
+
+        missing_counts = {
+            c.key: sum(1 for a in assessments if not a[c.key])
+            for c in config.components
+        }
+        assessed_missing = sorted(
+            [(c, missing_counts[c.key]) for c in config.components
+             if missing_counts[c.key] > 0],
+            key=lambda x: -x[1],
+        )
+        top1 = assessed_missing[0][0] if len(assessed_missing) > 0 else None
+        top2 = assessed_missing[1][0] if len(assessed_missing) > 1 else None
+
+        record = {
+            "provider_id":         provider,
+            "eligible_patients":   n_total,
+            "screened_patients":   n_complete,
+            "screening_rate":      rate,
+            "top_missing_1":       top1.label if top1 else None,
+            "top_missing_2":       top2.label if top2 else None,
+            "missing_count_1":     missing_counts[top1.key] if top1 else 0,
+            "missing_count_2":     missing_counts[top2.key] if top2 else 0,
+            "components_assessed": ", ".join(c.label for c in config.components),
+        }
+        for c in config.components:
+            record[f"missing_{c.key}"] = missing_counts[c.key]
+
+        records.append(record)
+
+    return pd.DataFrame(records)
 
 
 # ── File loading ───────────────────────────────────────────────────────────────

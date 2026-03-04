@@ -112,12 +112,6 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
 
     _target_rate = target_rate if target_rate is not None else TARGET_RATE
 
-    missing = {k: missing_count_for(row, k) for k in COMPONENT_KEYS}
-    sorted_missing = sorted(missing.items(), key=lambda x: -x[1])
-
-    top1_key = sorted_missing[0][0] if sorted_missing[0][1] > 0 else None
-    top2_key = sorted_missing[1][0] if len(sorted_missing) > 1 and sorted_missing[1][1] > 0 else None
-
     return {
         "display_name":        row["display_name"],
         "period_label":        period_label,
@@ -131,10 +125,10 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "other_type_label":    other_type.capitalize() + "s",
         "other_avg":           group_stats[other_type]["avg"],
         "other_n":             group_stats[other_type]["n"],
-        "top_missing_1":       COMPONENT_LABELS[top1_key] if top1_key else None,
-        "top_missing_2":       COMPONENT_LABELS[top2_key] if top2_key else None,
-        "missing_count_1":     missing[top1_key] if top1_key else 0,
-        "missing_count_2":     missing[top2_key] if top2_key else 0,
+        "top_missing_1":       row.get("top_missing_1"),
+        "top_missing_2":       row.get("top_missing_2"),
+        "missing_count_1":     int(row.get("missing_count_1") or 0),
+        "missing_count_2":     int(row.get("missing_count_2") or 0),
         "target_rate":         _target_rate,
         "dashboard_url":       dashboard_url if dashboard_url is not None else os.getenv("DASHBOARD_URL", ""),
         "team_label":          team_label if team_label is not None else os.getenv("TEAM_LABEL", "QI Team · Your Institution"),

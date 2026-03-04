@@ -32,12 +32,11 @@ def _secret(key: str, default: str = "") -> str:
 from process_data import (
     load_file,
     parse_provider,
-    detect_available_components,
-    aggregate_by_provider,
-    APPROVED_PROVIDERS,
-    TARGET_DX_PATTERN,
-    PROBLEMS_COL,
+    ComponentDef,
+    DataConfig,
+    aggregate_by_provider_generic,
     PROVIDER_COL,
+    PROBLEMS_COL,
 )
 from send_emails import (
     build_context,
@@ -105,6 +104,61 @@ with st.sidebar:
             value=int(_secret("SMTP_PORT", "587")),
         )
 
+    with st.expander("🧬 Screening components"):
+        st.caption(
+            "Define the measures tracked in your QI project. "
+            "These drive the Excel template and the processing logic."
+        )
+        cfg_provider_col = st.text_input(
+            "Provider column name",
+            value=_secret("PROVIDER_COL", PROVIDER_COL),
+            help="Column in the EMR export that identifies the encounter provider.",
+        )
+        cfg_problems_col = st.text_input(
+            "Diagnosis column name",
+            value=_secret("PROBLEMS_COL", PROBLEMS_COL),
+            help="Column that lists patient diagnoses / problem list.",
+        )
+        cfg_diagnosis_keywords = st.text_area(
+            "Diagnosis keywords (comma-separated)",
+            value=_secret(
+                "DIAGNOSIS_KEYWORDS",
+                "lupus, systemic lupus, SLE, DLE, MCTD, mixed connective tissue, "
+                "JIA, JRA, juvenile idiopathic arthritis, juvenile rheumatoid arthritis, "
+                "juvenile arthritis, polyarticular, oligoarticular, pauciarticular, "
+                "enthesitis",
+            ),
+            help="Patients are included only if their diagnosis column contains at least one of these keywords (case-insensitive).",
+        )
+
+        # Default components — read from secrets [[components]] if present
+        try:
+            _secret_comps = list(st.secrets.get("components", []) or [])
+        except Exception:
+            _secret_comps = []
+
+        _default_comps = _secret_comps or [
+            {"label": "Lipids",          "has_date": True},
+            {"label": "HbA1c",           "has_date": True},
+            {"label": "Blood Pressure",  "has_date": False},
+            {"label": "BMI",             "has_date": False},
+            {"label": "Smoking Status",  "has_date": False},
+        ]
+
+        cfg_components_df = st.data_editor(
+            pd.DataFrame(_default_comps),
+            column_config={
+                "label":    st.column_config.TextColumn("Component name", required=True),
+                "has_date": st.column_config.CheckboxColumn(
+                    "Has date column?",
+                    help="If checked, the template includes a '{name} Date' column and checks it's within the lookback window.",
+                ),
+            },
+            num_rows="dynamic",
+            use_container_width=True,
+            key="cfg_components",
+        )
+
 # Aliases used throughout the app
 screening_name = cfg_screening_name
 team_label     = cfg_team_label
@@ -125,6 +179,25 @@ DEFAULT_PERIOD = (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def load_providers() -> pd.DataFrame | None:
+    """Load provider list from st.secrets, then fall back to local CSV."""
+    try:
+        secret_providers = st.secrets.get("providers", None)
+        if secret_providers:
+            return pd.DataFrame(secret_providers)
+    except Exception:
+        pass
+
+    provider_path = Path(PROVIDER_LIST)
+    if not provider_path.exists():
+        st.error(
+            f"`{PROVIDER_LIST}` not found and no `[[providers]]` entries in Secrets. "
+            "Add providers to Streamlit Secrets or upload the CSV."
+        )
+        return None
+    return pd.read_csv(provider_path)
+
+
 def load_summary_and_providers(summary_source=None):
     """Load and merge summary with provider list. summary_source can be a path or UploadedFile."""
     if summary_source is None:
@@ -135,13 +208,65 @@ def load_summary_and_providers(summary_source=None):
     else:
         summary = pd.read_csv(summary_source)
 
-    provider_path = Path(PROVIDER_LIST)
-    if not provider_path.exists():
-        st.error(f"`{PROVIDER_LIST}` not found. Make sure you're running from the project folder.")
+    providers = load_providers()
+    if providers is None:
         return None
-
-    providers = pd.read_csv(provider_path)
     return summary.merge(providers, on="provider_id", how="inner")
+
+
+def _build_data_config() -> DataConfig:
+    """Construct a DataConfig from the current sidebar settings."""
+    keywords = [k.strip() for k in cfg_diagnosis_keywords.split(",") if k.strip()]
+    components = [
+        ComponentDef(
+            key=f"comp_{i}",
+            label=row["label"],
+            has_date=bool(row.get("has_date", False)),
+        )
+        for i, (_, row) in enumerate(cfg_components_df.iterrows())
+        if str(row.get("label", "")).strip()
+    ]
+    return DataConfig(
+        provider_col=cfg_provider_col,
+        problems_col=cfg_problems_col,
+        diagnosis_keywords=keywords,
+        components=components,
+    )
+
+
+def _generate_template(config: DataConfig) -> bytes:
+    """Return an Excel workbook (bytes) with the expected column headers and one example row."""
+    columns = [config.provider_col, config.problems_col]
+    for comp in config.components:
+        columns.append(comp.label)
+        if comp.has_date:
+            columns.append(f"{comp.label} Date")
+
+    example = {config.provider_col: "SMITH, JANE A", config.problems_col: "Lupus; SLE"}
+    for comp in config.components:
+        example[comp.label] = "documented value"
+        if comp.has_date:
+            example[f"{comp.label} Date"] = "2024-01-15"
+
+    df_tpl = pd.DataFrame([example], columns=columns)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        df_tpl.to_excel(writer, index=False, sheet_name="Data")
+    return buf.getvalue()
+
+
+def _validate_columns(df: pd.DataFrame, config: DataConfig) -> list[str]:
+    """Return a list of column names that are expected but missing from df."""
+    missing = []
+    for col in [config.provider_col, config.problems_col]:
+        if col not in df.columns:
+            missing.append(col)
+    for comp in config.components:
+        if comp.label not in df.columns:
+            missing.append(comp.label)
+        if comp.has_date and f"{comp.label} Date" not in df.columns:
+            missing.append(f"{comp.label} Date")
+    return missing
 
 
 def rate_badge(rate):
@@ -158,23 +283,47 @@ def rate_badge(rate):
 with tab1:
     st.error("🏥 **Run this step on the institutional workstation only.** Patient data must not leave the institutional machine.")
 
-    st.markdown("Upload the password-encrypted EMR export. The raw file will be deleted automatically after processing.")
+    # ── Download template ─────────────────────────────────────────────────────
+    with st.expander("📥 Step 0 — Download the input template", expanded=True):
+        st.markdown(
+            "Download the Excel template, fill it with data from your EMR export, "
+            "then upload it below. The template columns are defined by your "
+            "**Screening components** settings in the sidebar."
+        )
+        data_config_for_tpl = _build_data_config()
+        st.download_button(
+            label="⬇️ Download EMR template (.xlsx)",
+            data=_generate_template(data_config_for_tpl),
+            file_name="emr_template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        st.caption(
+            f"Required columns: **{data_config_for_tpl.provider_col}**, "
+            f"**{data_config_for_tpl.problems_col}**, "
+            + ", ".join(
+                f"**{c.label}**" + (f", **{c.label} Date**" if c.has_date else "")
+                for c in data_config_for_tpl.components
+            )
+        )
+
+    st.markdown("---")
+    st.markdown("Upload the completed (password-encrypted) file. The raw file will be deleted automatically after processing.")
 
     col1, col2 = st.columns([2, 1])
     with col1:
         uploaded_xlsx = st.file_uploader(
-            "EMR export (.xlsx)",
+            "Completed EMR template (.xlsx)",
             type=["xlsx", "xls"],
-            help="The password-encrypted file exported from your EMR system",
+            help="The filled-in template — password-protected is fine",
         )
     with col2:
         excel_password = st.text_input(
-            "Excel password",
+            "Excel password (if encrypted)",
             type="password",
-            help="The decryption password for the EMR export",
+            help="Leave blank if the file is not password-protected",
         )
 
-    if st.button("Process Data", type="primary", disabled=not (uploaded_xlsx and excel_password)):
+    if st.button("Process Data", type="primary", disabled=not uploaded_xlsx):
 
         suffix   = Path(uploaded_xlsx.name).suffix
         tmp_path = None
@@ -185,7 +334,7 @@ with tab1:
 
             with st.spinner("Decrypting and loading…"):
                 try:
-                    df = load_file(tmp_path, excel_password)
+                    df = load_file(tmp_path, excel_password or None)
                 except SystemExit:
                     st.error("Could not open the file. Check the password and try again.")
                     st.stop()
@@ -196,24 +345,38 @@ with tab1:
 
         st.success(f"Loaded {len(df):,} rows. Raw file deleted from this machine.")
 
-        if PROVIDER_COL not in df.columns:
-            st.error(f"Column `{PROVIDER_COL}` not found. Available columns: {df.columns.tolist()}")
+        # ── Validate columns ──────────────────────────────────────────────────
+        data_config = _build_data_config()
+        missing_cols = _validate_columns(df, data_config)
+        if missing_cols:
+            st.error(
+                "**Missing columns in the uploaded file.** "
+                "Make sure you're using the downloaded template and all columns are present.\n\n"
+                "Missing: " + ", ".join(f"`{c}`" for c in missing_cols) + "\n\n"
+                "Columns found: " + ", ".join(f"`{c}`" for c in df.columns.tolist())
+            )
             st.stop()
 
-        with st.spinner("Filtering patients…"):
-            df["_provider"] = df[PROVIDER_COL].apply(parse_provider)
+        # ── Filter by diagnosis ───────────────────────────────────────────────
+        keywords = data_config.diagnosis_keywords
 
-            def has_target_dx(problems):
-                if pd.isna(problems):
-                    return False
-                return bool(TARGET_DX_PATTERN.search(str(problems)))
+        def has_target_dx(problems):
+            if pd.isna(problems):
+                return False
+            text = str(problems).lower()
+            return any(kw.lower() in text for kw in keywords)
 
-            before   = len(df)
-            df       = df[df[PROBLEMS_COL].apply(has_target_dx)].copy()
-            after_dx = len(df)
+        df["_provider"] = df[data_config.provider_col].apply(parse_provider)
+        before   = len(df)
+        df       = df[df[data_config.problems_col].apply(has_target_dx)].copy()
+        after_dx = len(df)
 
-            unassigned = df[~df["_provider"].isin(APPROVED_PROVIDERS)].copy()
-            df         = df[df["_provider"].isin(APPROVED_PROVIDERS)].copy()
+        # ── Filter by approved providers (from secrets / provider_list.csv) ───
+        providers_df = load_providers()
+        approved     = set(providers_df["provider_id"].tolist()) if providers_df is not None else set()
+
+        unassigned = df[~df["_provider"].isin(approved)].copy()
+        df         = df[df["_provider"].isin(approved)].copy()
 
         st.info(f"After diagnosis filter: **{after_dx}** of {before} patients  ·  After provider filter: **{len(df)}** in scope")
 
@@ -226,8 +389,7 @@ with tab1:
                 )
 
         with st.spinner("Calculating screening rates…"):
-            available = detect_available_components(df)
-            summary   = aggregate_by_provider(df, available)
+            summary = aggregate_by_provider_generic(df, data_config)
 
         st.subheader("Screening Rates by Provider")
         display = summary[["provider_id", "eligible_patients", "screened_patients", "screening_rate",
