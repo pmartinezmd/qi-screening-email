@@ -179,8 +179,9 @@
       </td>
     </tr>
 
-    <!-- ── MISSING COMPONENTS ─────────────────────────────────────── -->
+    <!-- ── MISSING COMPONENTS / PATIENTS TO SCREEN ───────────────── -->
     {% if top_missing_1 %}
+    <!-- Component-level breakdown (patient-level data was processed) -->
     <tr>
       <td style="background:#ffffff;padding:0 32px 28px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
         <p style="margin:0 0 14px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
@@ -211,7 +212,7 @@
       </td>
     </tr>
 
-    <!-- ── NUDGE ──────────────────────────────────────────────────── -->
+    <!-- ── NUDGE (component-based) ────────────────────────────────── -->
     <tr>
       <td style="background:#ffffff;padding:0 32px 32px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
         <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -229,8 +230,49 @@
         </table>
       </td>
     </tr>
+    {% elif missing_count_1 > 0 %}
+    <!-- Count-only (summary-level data — no per-component breakdown) -->
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 28px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <p style="margin:0 0 14px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
+          Patients not yet fully screened
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px;">
+          <tr>
+            <td width="8" style="background:#c1440e;border-radius:2px;width:4px;font-size:0;">&nbsp;</td>
+            <td style="padding-left:12px;">
+              <p style="margin:0;font-size:13px;color:#1a1a2e;font-weight:600;">
+                {{ missing_count_1 }} patient{{ 's' if missing_count_1 != 1 else '' }} not yet at target
+              </p>
+              <p style="margin:2px 0 0;font-size:11px;color:#7a7a8a;">
+                {{ screened_patients }} of {{ eligible_patients }} eligible patients fully screened
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- ── NUDGE (count-based) ─────────────────────────────────────── -->
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 32px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background:#fffdf5;border:1px solid #e8a838;border-left:4px solid #e8a838;border-radius:0 4px 4px 0;padding:14px 18px;">
+              <p style="margin:0;font-size:12px;color:#1a1a2e;line-height:1.6;">
+                Screening {{ missing_count_1 }} outstanding patient{{ 's' if missing_count_1 != 1 else '' }}
+                could move your rate toward the {{ target_rate }}% target.
+                {% if dashboard_url %}
+                <a href="{{ dashboard_url }}" style="color:#2d6a8f;">View the full run chart dashboard →</a>
+                {% endif %}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
     {% else %}
-    <!-- No missing components -->
+    <!-- All screened -->
     <tr>
       <td style="background:#ffffff;padding:0 32px 32px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
         <table width="100%" cellpadding="0" cellspacing="0" border="0">

@@ -31,6 +31,7 @@ def _secret(key: str, default: str = "") -> str:
 
 from process_data import (
     load_file,
+    load_excel_sheets,
     parse_provider,
     ComponentDef,
     DataConfig,
@@ -234,8 +235,38 @@ def _build_data_config() -> DataConfig:
     )
 
 
-def _generate_template(config: DataConfig) -> bytes:
-    """Return an Excel workbook (bytes) with the expected column headers and one example row."""
+def _generate_summary_template(target_rate: int, provider_col: str) -> bytes:
+    """Return a 2-sheet Excel workbook for provider-level summary data input.
+
+    Sheet 1 'Summary'  — one row per provider with aggregate stats.
+    Sheet 2 'Patient List' — optional; one row per unscreened patient.
+    """
+    eligible_ex   = 20
+    screened_pct_ex = 65.0
+    target_no_ex  = round(eligible_ex * target_rate / 100)
+
+    summary_df = pd.DataFrame([{
+        provider_col:        "SMITH, JANE A",
+        "Eligible Patients": eligible_ex,
+        "Screened %":        screened_pct_ex,
+        "Target No.":        target_no_ex,
+        "Target %":          target_rate,
+    }])
+
+    patient_df = pd.DataFrame([
+        {provider_col: "SMITH, JANE A", "Patient Name": "JONES, ROBERT"},
+        {provider_col: "SMITH, JANE A", "Patient Name": "WILLIAMS, MARY"},
+    ])
+
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        summary_df.to_excel(writer, index=False, sheet_name="Summary")
+        patient_df.to_excel(writer, index=False, sheet_name="Patient List")
+    return buf.getvalue()
+
+
+def _generate_patient_template(config: DataConfig) -> bytes:
+    """Return a single-sheet Excel workbook with patient-level columns and one example row."""
     columns = [config.provider_col, config.problems_col]
     for comp in config.components:
         columns.append(comp.label)
@@ -248,15 +279,20 @@ def _generate_template(config: DataConfig) -> bytes:
         if comp.has_date:
             example[f"{comp.label} Date"] = "2024-01-15"
 
-    df_tpl = pd.DataFrame([example], columns=columns)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df_tpl.to_excel(writer, index=False, sheet_name="Data")
+        pd.DataFrame([example], columns=columns).to_excel(writer, index=False, sheet_name="Data")
     return buf.getvalue()
 
 
-def _validate_columns(df: pd.DataFrame, config: DataConfig) -> list[str]:
-    """Return a list of column names that are expected but missing from df."""
+def _validate_summary_columns(df: pd.DataFrame, provider_col: str) -> list[str]:
+    """Return column names expected in the Summary sheet but missing from df."""
+    required = [provider_col, "Eligible Patients", "Screened %", "Target No.", "Target %"]
+    return [c for c in required if c not in df.columns]
+
+
+def _validate_patient_columns(df: pd.DataFrame, config: DataConfig) -> list[str]:
+    """Return column names expected in the patient-level sheet but missing from df."""
     missing = []
     for col in [config.provider_col, config.problems_col]:
         if col not in df.columns:
@@ -267,6 +303,48 @@ def _validate_columns(df: pd.DataFrame, config: DataConfig) -> list[str]:
         if comp.has_date and f"{comp.label} Date" not in df.columns:
             missing.append(f"{comp.label} Date")
     return missing
+
+
+def _process_summary_format(
+    df_summary: pd.DataFrame,
+    df_patients: pd.DataFrame | None,
+    providers_df: pd.DataFrame | None,
+    provider_col: str,
+) -> pd.DataFrame:
+    """Process provider-level summary sheet into the standard processed_summary schema."""
+    rows = []
+    for _, row in df_summary.iterrows():
+        raw         = str(row[provider_col]).strip()
+        provider_id = parse_provider(raw)
+        eligible    = int(row["Eligible Patients"])
+        screened_pct = float(row["Screened %"])
+        target_no   = int(row.get("Target No.", 0) or 0)
+        screened    = round(screened_pct / 100 * eligible)
+        gap         = max(0, target_no - screened)
+
+        patient_names: list[str] = []
+        if df_patients is not None and not df_patients.empty and provider_col in df_patients.columns:
+            mask          = df_patients[provider_col].astype(str).str.strip() == raw
+            patient_names = df_patients[mask]["Patient Name"].dropna().astype(str).tolist()
+
+        patient_count = len(patient_names) if patient_names else gap
+
+        rows.append({
+            "provider_id":        provider_id,
+            "eligible_patients":  eligible,
+            "screened_patients":  screened,
+            "screening_rate":     round(screened_pct, 1),
+            "top_missing_1":      None,
+            "top_missing_2":      None,
+            "missing_count_1":    patient_count,
+            "missing_count_2":    0,
+            "patients_to_screen": ", ".join(patient_names),
+        })
+
+    summary = pd.DataFrame(rows)
+    if providers_df is not None:
+        summary = summary.merge(providers_df, on="provider_id", how="inner")
+    return summary
 
 
 def rate_badge(rate):
@@ -285,36 +363,60 @@ with tab1:
 
     # ── Download template ─────────────────────────────────────────────────────
     with st.expander("📥 Step 0 — Download the input template", expanded=True):
-        st.markdown(
-            "Download the Excel template, fill it with data from your EMR export, "
-            "then upload it below. The template columns are defined by your "
-            "**Screening components** settings in the sidebar."
-        )
-        data_config_for_tpl = _build_data_config()
-        st.download_button(
-            label="⬇️ Download EMR template (.xlsx)",
-            data=_generate_template(data_config_for_tpl),
-            file_name="emr_template.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        st.caption(
-            f"Required columns: **{data_config_for_tpl.provider_col}**, "
-            f"**{data_config_for_tpl.problems_col}**, "
-            + ", ".join(
-                f"**{c.label}**" + (f", **{c.label} Date**" if c.has_date else "")
-                for c in data_config_for_tpl.components
+        st.markdown("Choose the template that matches your EMR report format.")
+        tpl_col1, tpl_col2 = st.columns(2)
+
+        with tpl_col1:
+            st.markdown("**Provider summary** *(pre-aggregated)*")
+            st.caption(
+                "Use this when your EMR report already shows totals per provider: "
+                "number of eligible patients, % screened, and target. "
+                "Optionally list specific unscreened patients in the second sheet."
             )
-        )
+            st.download_button(
+                label="⬇️ Summary template (.xlsx)",
+                data=_generate_summary_template(cfg_target_rate, cfg_provider_col),
+                file_name="screening_summary_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+            st.caption(
+                f"Sheet 1 — `{cfg_provider_col}`, `Eligible Patients`, `Screened %`, `Target No.`, `Target %`  \n"
+                f"Sheet 2 *(optional)* — `{cfg_provider_col}`, `Patient Name`"
+            )
+
+        with tpl_col2:
+            st.markdown("**Patient-level detail** *(raw EMR export)*")
+            st.caption(
+                "Use this when your EMR report has one row per patient. "
+                "The app filters by diagnosis and calculates rates automatically. "
+                "Screening components are defined in the sidebar."
+            )
+            _data_config_tpl = _build_data_config()
+            st.download_button(
+                label="⬇️ Patient-level template (.xlsx)",
+                data=_generate_patient_template(_data_config_tpl),
+                file_name="emr_patient_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+            st.caption(
+                f"`{_data_config_tpl.provider_col}`, `{_data_config_tpl.problems_col}`, "
+                + ", ".join(
+                    f"`{c.label}`" + (f", `{c.label} Date`" if c.has_date else "")
+                    for c in _data_config_tpl.components
+                )
+            )
 
     st.markdown("---")
-    st.markdown("Upload the completed (password-encrypted) file. The raw file will be deleted automatically after processing.")
+    st.markdown("Upload the completed (optionally password-encrypted) file. The raw file is deleted automatically after processing.")
 
     col1, col2 = st.columns([2, 1])
     with col1:
         uploaded_xlsx = st.file_uploader(
-            "Completed EMR template (.xlsx)",
+            "Completed template (.xlsx) — summary or patient-level",
             type=["xlsx", "xls"],
-            help="The filled-in template — password-protected is fine",
+            help="Either template format is accepted — the app detects which one you uploaded",
         )
     with col2:
         excel_password = st.text_input(
@@ -332,9 +434,9 @@ with tab1:
                 tmp.write(uploaded_xlsx.getbuffer())
                 tmp_path = tmp.name
 
-            with st.spinner("Decrypting and loading…"):
+            with st.spinner("Loading file…"):
                 try:
-                    df = load_file(tmp_path, excel_password or None)
+                    sheets = load_excel_sheets(tmp_path, excel_password or None)
                 except SystemExit:
                     st.error("Could not open the file. Check the password and try again.")
                     st.stop()
@@ -343,59 +445,103 @@ with tab1:
             if tmp_path and Path(tmp_path).exists():
                 Path(tmp_path).unlink()
 
-        st.success(f"Loaded {len(df):,} rows. Raw file deleted from this machine.")
+        # ── Detect format ─────────────────────────────────────────────────────
+        is_summary_format = "Summary" in sheets
 
-        # ── Validate columns ──────────────────────────────────────────────────
-        data_config = _build_data_config()
-        missing_cols = _validate_columns(df, data_config)
-        if missing_cols:
-            st.error(
-                "**Missing columns in the uploaded file.** "
-                "Make sure you're using the downloaded template and all columns are present.\n\n"
-                "Missing: " + ", ".join(f"`{c}`" for c in missing_cols) + "\n\n"
-                "Columns found: " + ", ".join(f"`{c}`" for c in df.columns.tolist())
+        providers_df = load_providers()
+
+        if is_summary_format:
+            # ── Provider summary format ───────────────────────────────────────
+            df_summary  = sheets["Summary"].dropna(how="all")
+            df_patients = sheets.get("Patient List")
+            if df_patients is not None:
+                df_patients = df_patients.dropna(how="all")
+                if df_patients.empty:
+                    df_patients = None
+
+            st.success(f"Detected **summary format** — {len(df_summary)} provider rows loaded. Raw file deleted.")
+
+            missing_cols = _validate_summary_columns(df_summary, cfg_provider_col)
+            if missing_cols:
+                st.error(
+                    "**Missing columns in the Summary sheet.**\n\n"
+                    "Missing: " + ", ".join(f"`{c}`" for c in missing_cols) + "\n\n"
+                    "Columns found: " + ", ".join(f"`{c}`" for c in df_summary.columns.tolist())
+                )
+                st.stop()
+
+            with st.spinner("Calculating screening rates…"):
+                summary = _process_summary_format(df_summary, df_patients, providers_df, cfg_provider_col)
+
+        else:
+            # ── Patient-level format ──────────────────────────────────────────
+            first_sheet = next(iter(sheets))
+            df = sheets[first_sheet].dropna(how="all")
+            st.success(f"Detected **patient-level format** — {len(df):,} rows loaded. Raw file deleted.")
+
+            data_config  = _build_data_config()
+            missing_cols = _validate_patient_columns(df, data_config)
+            if missing_cols:
+                st.error(
+                    "**Missing columns in the uploaded file.**\n\n"
+                    "Missing: " + ", ".join(f"`{c}`" for c in missing_cols) + "\n\n"
+                    "Columns found: " + ", ".join(f"`{c}`" for c in df.columns.tolist())
+                )
+                st.stop()
+
+            keywords = data_config.diagnosis_keywords
+
+            def has_target_dx(problems):
+                if pd.isna(problems):
+                    return False
+                text = str(problems).lower()
+                return any(kw.lower() in text for kw in keywords)
+
+            df["_provider"] = df[data_config.provider_col].apply(parse_provider)
+            before   = len(df)
+            df       = df[df[data_config.problems_col].apply(has_target_dx)].copy()
+            after_dx = len(df)
+
+            approved   = set(providers_df["provider_id"].tolist()) if providers_df is not None else set()
+            unassigned = df[~df["_provider"].isin(approved)].copy()
+            df         = df[df["_provider"].isin(approved)].copy()
+
+            st.info(f"After diagnosis filter: **{after_dx}** of {before} patients  ·  After provider filter: **{len(df)}** in scope")
+
+            if len(unassigned):
+                with st.expander(f"⚠️ {len(unassigned)} patients with target diagnosis but unapproved provider"):
+                    id_cols = [c for c in ["DOB", "Age", "Sex", "_provider"] if c in unassigned.columns]
+                    st.dataframe(unassigned[id_cols].rename(columns={"_provider": "Current Provider"}), use_container_width=True)
+
+            with st.spinner("Calculating screening rates…"):
+                summary = aggregate_by_provider_generic(df, data_config)
+                summary["patients_to_screen"] = ""
+
+        # ── Results (shared by both paths) ────────────────────────────────────
+        if summary.empty:
+            st.warning(
+                "No providers matched. Check that provider names match your configured providers exactly."
             )
             st.stop()
 
-        # ── Filter by diagnosis ───────────────────────────────────────────────
-        keywords = data_config.diagnosis_keywords
-
-        def has_target_dx(problems):
-            if pd.isna(problems):
-                return False
-            text = str(problems).lower()
-            return any(kw.lower() in text for kw in keywords)
-
-        df["_provider"] = df[data_config.provider_col].apply(parse_provider)
-        before   = len(df)
-        df       = df[df[data_config.problems_col].apply(has_target_dx)].copy()
-        after_dx = len(df)
-
-        # ── Filter by approved providers (from secrets / provider_list.csv) ───
-        providers_df = load_providers()
-        approved     = set(providers_df["provider_id"].tolist()) if providers_df is not None else set()
-
-        unassigned = df[~df["_provider"].isin(approved)].copy()
-        df         = df[df["_provider"].isin(approved)].copy()
-
-        st.info(f"After diagnosis filter: **{after_dx}** of {before} patients  ·  After provider filter: **{len(df)}** in scope")
-
-        if len(unassigned):
-            with st.expander(f"⚠️ {len(unassigned)} patients with target diagnosis but unapproved provider — review only, do not export"):
-                id_cols = [c for c in ["DOB", "Age", "Sex", "_provider"] if c in unassigned.columns]
-                st.dataframe(
-                    unassigned[id_cols].rename(columns={"_provider": "Current Provider"}),
-                    use_container_width=True,
-                )
-
-        with st.spinner("Calculating screening rates…"):
-            summary = aggregate_by_provider_generic(df, data_config)
+        unmatched = (len(df_summary) if is_summary_format else 0) - len(summary) if is_summary_format else 0
+        if unmatched > 0:
+            st.info(f"Note: {unmatched} provider row(s) did not match any configured provider and were excluded.")
 
         st.subheader("Screening Rates by Provider")
-        display = summary[["provider_id", "eligible_patients", "screened_patients", "screening_rate",
-                           "top_missing_1", "top_missing_2"]].copy()
-        display = display.sort_values("screening_rate", ascending=False).reset_index(drop=True)
-        display.columns = ["Provider", "Eligible", "Screened", "Rate (%)", "Top Gap 1", "Top Gap 2"]
+
+        gap_col    = "missing_count_1" if "missing_count_1" in summary.columns else None
+        disp_cols  = ["provider_id", "eligible_patients", "screened_patients", "screening_rate"]
+        disp_names = ["Provider", "Eligible", "Screened", "Rate (%)"]
+        if gap_col:
+            disp_cols.append(gap_col)
+            disp_names.append("Patients to Screen")
+        if "top_missing_1" in summary.columns:
+            disp_cols += ["top_missing_1", "top_missing_2"]
+            disp_names += ["Top Gap 1", "Top Gap 2"]
+
+        display = summary[disp_cols].copy().sort_values("screening_rate", ascending=False).reset_index(drop=True)
+        display.columns = disp_names
 
         team_avg = summary["screening_rate"].mean()
         col1, col2, col3 = st.columns(3)
@@ -409,7 +555,18 @@ with tab1:
             hide_index=True,
         )
 
-        csv_bytes = summary.to_csv(index=False).encode()
+        # ── Patient list (shown here only — not exported) ─────────────────────
+        if "patients_to_screen" in summary.columns:
+            has_patient_names = summary["patients_to_screen"].fillna("").str.strip().ne("").any()
+            if has_patient_names:
+                with st.expander("👥 Patients to screen by provider"):
+                    for _, row in summary.iterrows():
+                        pts = str(row.get("patients_to_screen", "")).strip()
+                        if pts:
+                            st.markdown(f"**{row['provider_id']}** ({int(row['missing_count_1'])}): {pts}")
+
+        export_summary = summary.drop(columns=["patients_to_screen"], errors="ignore")
+        csv_bytes = export_summary.to_csv(index=False).encode()
         st.download_button(
             label="⬇️ Download processed_summary.csv",
             data=csv_bytes,
