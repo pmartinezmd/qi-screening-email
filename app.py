@@ -220,6 +220,10 @@ def load_summary_and_providers(summary_source=None):
     providers = load_providers()
     if providers is None:
         return None
+    # Drop provider columns already present in the summary CSV (from the processing merge)
+    # to prevent display_name_x / display_name_y suffixes on the second merge.
+    provider_extra_cols = [c for c in providers.columns if c != "provider_id"]
+    summary = summary.drop(columns=[c for c in provider_extra_cols if c in summary.columns], errors="ignore")
     return summary.merge(providers, on="provider_id", how="inner")
 
 

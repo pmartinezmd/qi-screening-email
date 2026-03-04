@@ -66,12 +66,16 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def compute_group_stats(merged: pd.DataFrame) -> dict:
-    """Compute screening rate averages by provider type (attending / fellow).
-    Falls back to overall average when provider_type column is absent.
+    """Compute actual screening rate per provider type (total screened / total eligible).
+    Falls back to overall rate when provider_type column is absent.
     """
+    def _rate(g: pd.DataFrame) -> float:
+        total = g["eligible_patients"].sum()
+        return round(g["screened_patients"].sum() / total * 100, 1) if total > 0 else 0.0
+
     stats = {}
     if "provider_type" not in merged.columns:
-        overall = round(merged["screening_rate"].mean(), 1) if len(merged) > 0 else 0.0
+        overall = _rate(merged)
         for ptype in ("attending", "fellow"):
             stats[ptype] = {"avg": overall, "n": len(merged)}
         return stats
@@ -79,7 +83,7 @@ def compute_group_stats(merged: pd.DataFrame) -> dict:
     for ptype in ("attending", "fellow"):
         group = merged[merged["provider_type"] == ptype]
         stats[ptype] = {
-            "avg": round(group["screening_rate"].mean(), 1) if len(group) > 0 else 0.0,
+            "avg": _rate(group) if len(group) > 0 else 0.0,
             "n":   len(group),
         }
     return stats
