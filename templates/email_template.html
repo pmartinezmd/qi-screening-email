@@ -209,6 +209,18 @@
           </tr>
         </table>
         {% endif %}
+
+        {% if patients_to_screen %}
+        <p style="margin:16px 0 8px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
+          Patients to screen
+        </p>
+        {% for patient in patients_to_screen.split(';') %}
+        {% set patient = patient.strip() %}
+        {% if patient %}
+        <p style="margin:0 0 4px;font-size:12px;color:#1a1a2e;">• {{ patient }}</p>
+        {% endif %}
+        {% endfor %}
+        {% endif %}
       </td>
     </tr>
 
@@ -250,6 +262,18 @@
             </td>
           </tr>
         </table>
+
+        {% if patients_to_screen %}
+        <p style="margin:16px 0 8px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
+          Patients to screen
+        </p>
+        {% for patient in patients_to_screen.split(';') %}
+        {% set patient = patient.strip() %}
+        {% if patient %}
+        <p style="margin:0 0 4px;font-size:12px;color:#1a1a2e;">• {{ patient }}</p>
+        {% endif %}
+        {% endfor %}
+        {% endif %}
       </td>
     </tr>
 
