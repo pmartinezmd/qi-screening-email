@@ -109,19 +109,32 @@ COMPONENT_LABELS = {
 }
 
 
+def _na(val, default=None):
+    """Return default when val is NaN/None, otherwise return val."""
+    try:
+        if pd.isna(val):
+            return default
+    except (TypeError, ValueError):
+        pass
+    return val
+
+
 def build_context(row: pd.Series, group_stats: dict, period_label: str,
                   is_top_performer: bool = False,
                   screening_name: str | None = None,
                   team_label: str | None = None,
                   dashboard_url: str | None = None,
                   target_rate: int | None = None) -> dict:
-    ptype      = row.get("provider_type") or "attending"
+    ptype      = _na(row.get("provider_type"), "attending") or "attending"
     other_type = "fellow" if ptype == "attending" else "attending"
 
     _target_rate = target_rate if target_rate is not None else TARGET_RATE
 
+    # display_name falls back to provider_id if the column is absent
+    display_name = _na(row.get("display_name")) or row.get("provider_id", "Provider")
+
     return {
-        "display_name":        row["display_name"],
+        "display_name":        display_name,
         "period_label":        period_label,
         "screening_rate":      row["screening_rate"],
         "eligible_patients":   int(row["eligible_patients"]),
@@ -133,16 +146,16 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "other_type_label":    other_type.capitalize() + "s",
         "other_avg":           group_stats[other_type]["avg"],
         "other_n":             group_stats[other_type]["n"],
-        "top_missing_1":       row.get("top_missing_1"),
-        "top_missing_2":       row.get("top_missing_2"),
-        "missing_count_1":     int(row.get("missing_count_1") or 0),
-        "missing_count_2":     int(row.get("missing_count_2") or 0),
+        "top_missing_1":       _na(row.get("top_missing_1")),
+        "top_missing_2":       _na(row.get("top_missing_2")),
+        "missing_count_1":     int(_na(row.get("missing_count_1"), 0)),
+        "missing_count_2":     int(_na(row.get("missing_count_2"), 0)),
         "target_rate":         _target_rate,
         "dashboard_url":       dashboard_url if dashboard_url is not None else os.getenv("DASHBOARD_URL", ""),
         "team_label":          team_label if team_label is not None else os.getenv("TEAM_LABEL", "QI Team · Your Institution"),
         "screening_name":      screening_name if screening_name is not None else os.getenv("SCREENING_NAME", "Screening QI"),
         "is_top_performer":    is_top_performer,
-        "patients_to_screen":  str(row.get("patients_to_screen") or ""),
+        "patients_to_screen":  _na(row.get("patients_to_screen"), "") or "",
     }
 
 
