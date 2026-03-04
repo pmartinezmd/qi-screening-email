@@ -235,6 +235,38 @@ def load_file(path: str, password: str | None = None) -> pd.DataFrame:
     return pd.read_excel(decrypted, engine="openpyxl")
 
 
+def load_excel_sheets(path: str, password: str | None = None) -> dict[str, pd.DataFrame]:
+    """Return all sheets from an Excel workbook as {sheet_name: DataFrame}."""
+    p = Path(path)
+    if not p.exists():
+        print(f"ERROR: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        return pd.read_excel(p, sheet_name=None, engine="openpyxl")
+    except Exception:
+        pass
+
+    if not password:
+        print("ERROR: file appears to be encrypted but no password was provided.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        import msoffcrypto
+    except ImportError:
+        print("ERROR: install msoffcrypto-tool:  pip install msoffcrypto-tool", file=sys.stderr)
+        sys.exit(1)
+
+    with open(p, "rb") as f:
+        office_file = msoffcrypto.OfficeFile(f)
+        office_file.load_key(password=password)
+        decrypted = io.BytesIO()
+        office_file.decrypt(decrypted)
+
+    decrypted.seek(0)
+    return pd.read_excel(decrypted, sheet_name=None, engine="openpyxl")
+
+
 # ── Parsing helpers ────────────────────────────────────────────────────────────
 
 def parse_provider(val) -> str:

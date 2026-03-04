@@ -134,6 +134,7 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "team_label":          team_label if team_label is not None else os.getenv("TEAM_LABEL", "QI Team · Your Institution"),
         "screening_name":      screening_name if screening_name is not None else os.getenv("SCREENING_NAME", "Screening QI"),
         "is_top_performer":    is_top_performer,
+        "patients_to_screen":  str(row.get("patients_to_screen") or ""),
     }
 
 
