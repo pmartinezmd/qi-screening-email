@@ -110,6 +110,14 @@ with st.sidebar:
             "Define the measures tracked in your QI project. "
             "These drive the Excel template and the processing logic."
         )
+        cfg_template_type = st.radio(
+            "Template type",
+            options=["Per-component (Summary)", "Patient list"],
+            help=(
+                "Per-component: one column per screening measure — the app computes per-measure gaps and lists missing patients by name.\n\n"
+                "Patient list: same format, saved as a 'Patient List' sheet (use when your workflow distinguishes the two)."
+            ),
+        )
         cfg_provider_col = st.text_input(
             "Provider column name",
             value=_secret("PROVIDER_COL", PROVIDER_COL),
@@ -329,61 +337,33 @@ def _process_summary_format(
     return summary
 
 
-def _generate_patient_list_template(provider_col: str) -> bytes:
-    """Simple 3-column patient list: provider | patient name | screening complete (1/0).
-    Sheet name: 'Patient List' (detected automatically on upload).
-    """
-    df = pd.DataFrame([
-        {provider_col: "SMITH, JANE A", "Patient Name": "JONES, ROBERT",  "Screening Complete": 1},
-        {provider_col: "SMITH, JANE A", "Patient Name": "WILLIAMS, MARY", "Screening Complete": 0},
-        {provider_col: "DOE, JOHN B",   "Patient Name": "BROWN, JAMES",   "Screening Complete": 1},
-        {provider_col: "DOE, JOHN B",   "Patient Name": "GARCIA, SOFIA",  "Screening Complete": 0},
-    ])
+def _generate_patient_list_template(provider_col: str, components: list) -> bytes:
+    """Same per-component format as the Summary template, saved as sheet 'Patient List'."""
+    rows = [
+        {provider_col: "SMITH, JANE A", "Patient Name": "JONES, ROBERT",  **{c.label: 1 for c in components}},
+        {provider_col: "SMITH, JANE A", "Patient Name": "WILLIAMS, MARY", **{c.label: (0 if i % 2 == 0 else 1) for i, c in enumerate(components)}},
+        {provider_col: "DOE, JOHN B",   "Patient Name": "BROWN, JAMES",   **{c.label: 1 for c in components}},
+        {provider_col: "DOE, JOHN B",   "Patient Name": "GARCIA, SOFIA",  **{c.label: (0 if i % 3 == 0 else 1) for i, c in enumerate(components)}},
+    ]
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Patient List")
+        pd.DataFrame(rows).to_excel(writer, index=False, sheet_name="Patient List")
     return buf.getvalue()
 
 
-def _validate_patient_list_columns(df: pd.DataFrame, provider_col: str) -> list[str]:
-    """Return column names expected in the Patient List sheet but missing from df."""
-    required = [provider_col, "Patient Name", "Screening Complete"]
-    return [c for c in required if c not in df.columns]
+def _validate_patient_list_columns(df: pd.DataFrame, provider_col: str, components: list) -> list[str]:
+    """Same column requirements as the Summary sheet."""
+    return _validate_summary_columns(df, provider_col, components)
 
 
 def _process_patient_list_format(
     df: pd.DataFrame,
     providers_df: pd.DataFrame | None,
     provider_col: str,
-    target_rate: float,
+    components: list,
 ) -> pd.DataFrame:
-    """Aggregate simple patient list (single Screening Complete flag) into the summary schema."""
-    df = df.copy()
-    df["_provider_id"] = df[provider_col].apply(parse_provider)
-    df["_complete"] = pd.to_numeric(df["Screening Complete"], errors="coerce").fillna(0).astype(int)
-
-    rows = []
-    for provider_id, group in df.groupby("_provider_id"):
-        eligible       = len(group)
-        screened       = int(group["_complete"].sum())
-        screening_rate = round(screened / eligible * 100, 1) if eligible > 0 else 0.0
-        incomplete     = group[group["_complete"] == 0]["Patient Name"].dropna().astype(str).tolist()
-        rows.append({
-            "provider_id":        provider_id,
-            "eligible_patients":  eligible,
-            "screened_patients":  screened,
-            "screening_rate":     screening_rate,
-            "top_missing_1":      None,
-            "top_missing_2":      None,
-            "missing_count_1":    len(incomplete),
-            "missing_count_2":    0,
-            "patients_to_screen": "; ".join(incomplete),
-        })
-
-    summary = pd.DataFrame(rows)
-    if providers_df is not None:
-        summary = summary.merge(providers_df, on="provider_id", how="inner")
-    return summary
+    """Same per-component aggregation as the Summary path."""
+    return _process_summary_format(df, providers_df, provider_col, components)
 
 
 def rate_badge(rate):
@@ -405,42 +385,31 @@ with tab1:
         _data_config_tpl = _build_data_config()
         _comp_labels     = [c.label for c in _data_config_tpl.components]
         st.markdown(
-            "Choose a template, fill it in with your EMR data, and upload it below. "
-            "The app auto-detects which format you uploaded."
+            "Download the template, fill in your patient data, and upload it below. "
+            "One row per patient — mark each screening component **1** (complete) or **0** (not complete). "
+            "The template type is set in the sidebar under **Screening components**."
         )
-        tpl_col1, tpl_col2 = st.columns(2)
-        with tpl_col1:
-            st.markdown("**Per-component template** *(recommended)*")
-            st.caption(
-                "One row per patient. Mark each screening component **1** (done) or **0** (not done). "
-                "The app computes rates and identifies exactly which screenings each patient is missing."
-            )
-            st.download_button(
-                label="⬇️ Download summary template (.xlsx)",
-                data=_generate_summary_template(cfg_provider_col, _data_config_tpl.components),
-                file_name="summary_template.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-            st.caption(
-                f"Columns: `{cfg_provider_col}` · `Patient Name`"
-                + ((" · " + " · ".join(f"`{l}`" for l in _comp_labels)) if _comp_labels else "")
-                + "  (1 = complete, 0 = not complete)"
-            )
-        with tpl_col2:
-            st.markdown("**Simple patient list template**")
-            st.caption(
-                "One row per patient with a single overall flag. "
-                "Use when you only need screening rates, not per-component breakdowns."
-            )
-            st.download_button(
-                label="⬇️ Download patient list template (.xlsx)",
-                data=_generate_patient_list_template(cfg_provider_col),
-                file_name="patient_list_template.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-            st.caption(
-                f"Columns: `{cfg_provider_col}` · `Patient Name` · `Screening Complete`  (1 = done, 0 = not done)"
-            )
+        _is_summary = cfg_template_type.startswith("Per-component")
+        if _is_summary:
+            _tpl_data  = _generate_summary_template(cfg_provider_col, _data_config_tpl.components)
+            _tpl_fname = "summary_template.xlsx"
+            _tpl_label = "⬇️ Download summary template (.xlsx)"
+        else:
+            _tpl_data  = _generate_patient_list_template(cfg_provider_col, _data_config_tpl.components)
+            _tpl_fname = "patient_list_template.xlsx"
+            _tpl_label = "⬇️ Download patient list template (.xlsx)"
+
+        st.download_button(
+            label=_tpl_label,
+            data=_tpl_data,
+            file_name=_tpl_fname,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        st.caption(
+            f"Columns: `{cfg_provider_col}` · `Patient Name`"
+            + ((" · " + " · ".join(f"`{l}`" for l in _comp_labels)) if _comp_labels else "")
+            + "  (1 = complete, 0 = not complete)"
+        )
 
     st.markdown("---")
     st.markdown("Upload the completed (optionally password-encrypted) file. The raw file is deleted automatically after processing.")
@@ -505,11 +474,12 @@ with tab1:
                 )
 
         elif "Patient List" in sheets:
-            # ── Patient list format (1 row per patient, 1/0 flag) ─────────────
+            # ── Patient list format (per-component, same logic as Summary) ────
             df = sheets["Patient List"].dropna(how="all")
+            _cfg = _build_data_config()
             st.success(f"Detected **patient list format** — {len(df):,} patient rows loaded. Raw file deleted.")
 
-            missing_cols = _validate_patient_list_columns(df, cfg_provider_col)
+            missing_cols = _validate_patient_list_columns(df, cfg_provider_col, _cfg.components)
             if missing_cols:
                 st.error(
                     "**Missing columns in the Patient List sheet.**\n\n"
@@ -519,7 +489,7 @@ with tab1:
                 st.stop()
 
             with st.spinner("Calculating screening rates…"):
-                summary = _process_patient_list_format(df, providers_df, cfg_provider_col, cfg_target_rate)
+                summary = _process_patient_list_format(df, providers_df, cfg_provider_col, _cfg.components)
 
         else:
             st.error(

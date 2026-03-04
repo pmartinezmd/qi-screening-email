@@ -66,8 +66,16 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def compute_group_stats(merged: pd.DataFrame) -> dict:
-    """Compute screening rate averages by provider type (attending / fellow)."""
+    """Compute screening rate averages by provider type (attending / fellow).
+    Falls back to overall average when provider_type column is absent.
+    """
     stats = {}
+    if "provider_type" not in merged.columns:
+        overall = round(merged["screening_rate"].mean(), 1) if len(merged) > 0 else 0.0
+        for ptype in ("attending", "fellow"):
+            stats[ptype] = {"avg": overall, "n": len(merged)}
+        return stats
+
     for ptype in ("attending", "fellow"):
         group = merged[merged["provider_type"] == ptype]
         stats[ptype] = {
@@ -107,7 +115,7 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
                   team_label: str | None = None,
                   dashboard_url: str | None = None,
                   target_rate: int | None = None) -> dict:
-    ptype      = row["provider_type"]
+    ptype      = row.get("provider_type") or "attending"
     other_type = "fellow" if ptype == "attending" else "attending"
 
     _target_rate = target_rate if target_rate is not None else TARGET_RATE
