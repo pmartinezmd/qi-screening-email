@@ -301,11 +301,15 @@ def _process_summary_format(
         screened       = int(all_done.sum())
         screening_rate = round(screened / eligible * 100, 1) if eligible > 0 else 0.0
 
-        # Per-component gaps → top 2 most-missing
+        # Per-component rates and gaps
         comp_gaps: list[tuple[str, int]] = []
+        comp_rates_parts: list[str] = []
         for comp in components:
             if comp.label in group.columns:
-                gap = eligible - int(group[comp.label].sum())
+                done = int(group[comp.label].sum())
+                gap  = eligible - done
+                rate = round(done / eligible * 100, 1) if eligible > 0 else 0.0
+                comp_rates_parts.append(f"{comp.label}:{rate}")
                 if gap > 0:
                     comp_gaps.append((comp.label, gap))
         comp_gaps.sort(key=lambda x: -x[1])
@@ -333,6 +337,7 @@ def _process_summary_format(
             "missing_count_1":    comp_gaps[0][1] if comp_gaps else max(0, eligible - screened),
             "missing_count_2":    comp_gaps[1][1] if len(comp_gaps) > 1 else 0,
             "patients_to_screen": "; ".join(patient_entries),
+            "comp_rates":         ";".join(comp_rates_parts),
         })
 
     summary = pd.DataFrame(rows)

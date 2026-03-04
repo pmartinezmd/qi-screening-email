@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ screening_name }} · Bimonthly Update</title>
+<title>{{ screening_name }} · Monthly Update</title>
 </head>
 <body style="margin:0;padding:0;background:#f8f6f2;font-family:'DM Sans',Arial,sans-serif;color:#1a1a2e;">
 
@@ -36,7 +36,7 @@
         <p style="margin:12px 0 0;font-size:13px;color:#7a7a8a;line-height:1.6;">
           Here is your screening summary for {{ period_label }}.
           Results are based on EMR chart audit — complete screening requires
-          all configured components to be documented within the past 12 months.
+          all configured components to be documented in the last visit.
         </p>
       </td>
     </tr>
@@ -180,6 +180,37 @@
         </p>
       </td>
     </tr>
+
+    <!-- ── SCREENING BY COMPONENT ─────────────────────────────────── -->
+    {% if comp_rates %}
+    <tr>
+      <td style="background:#ffffff;padding:0 32px 28px;border-left:1px solid #e0dbd3;border-right:1px solid #e0dbd3;">
+        <p style="margin:0 0 14px;font-size:10px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#7a7a8a;">
+          Screening by component
+        </p>
+        {% for comp in comp_rates %}
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:8px;">
+          <tr>
+            <td width="110" style="font-size:11px;color:#7a7a8a;padding-right:10px;vertical-align:middle;white-space:nowrap;overflow:hidden;">
+              {{ comp.label }}
+            </td>
+            <td style="vertical-align:middle;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  {% if comp.rate > 0 %}<td width="{{ comp.rate|int }}%" style="width:{{ comp.rate|int }}%;background:{{ comp.color }};height:14px;border-radius:2px 0 0 2px;font-size:0;">&nbsp;</td>{% endif %}
+                  <td style="background:#e0dbd3;height:14px;border-radius:{% if comp.rate > 0 %}0 2px 2px 0{% else %}2px{% endif %};font-size:0;">&nbsp;</td>
+                </tr>
+              </table>
+            </td>
+            <td width="42" style="font-family:'Courier New',monospace;font-size:11px;font-weight:700;color:{{ comp.color }};padding-left:10px;vertical-align:middle;white-space:nowrap;">
+              {{ comp.rate }}%
+            </td>
+          </tr>
+        </table>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endif %}
 
     <!-- ── MISSING COMPONENTS / PATIENTS TO SCREEN ───────────────── -->
     {% if top_missing_1 %}

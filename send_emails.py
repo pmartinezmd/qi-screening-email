@@ -138,6 +138,19 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
     # display_name falls back to provider_id if the column is absent
     display_name = _na(row.get("display_name")) or row.get("provider_id", "Provider")
 
+    # Parse "Lipids:75.0;HbA1c:60.0;..." into a list of dicts with label, rate, color
+    comp_rates_raw = _na(row.get("comp_rates"), "") or ""
+    comp_rates = []
+    for item in comp_rates_raw.split(";"):
+        item = item.strip()
+        if ":" in item:
+            label, rate_str = item.rsplit(":", 1)
+            try:
+                r = float(rate_str)
+                comp_rates.append({"label": label.strip(), "rate": r, "color": rate_color(r, _target_rate)})
+            except ValueError:
+                pass
+
     return {
         "display_name":        display_name,
         "period_label":        period_label,
@@ -162,6 +175,7 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "is_top_performer":    is_top_performer,
         "patients_to_screen":  _na(row.get("patients_to_screen"), "") or "",
         "comp_count":          comp_count,
+        "comp_rates":          comp_rates,
     }
 
 
