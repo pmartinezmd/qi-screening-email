@@ -1,5 +1,6 @@
 # Credentials
 .env
+.streamlit/secrets.toml
 
 # All patient data and operational files — never commit
 data/*.xlsx

@@ -4,3 +4,4 @@ python-dotenv
 openpyxl
 msoffcrypto-tool
 streamlit>=1.32
+python-dateutil

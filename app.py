@@ -11,6 +11,7 @@ import io
 import os
 import tempfile
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,13 @@ from dotenv import load_dotenv
 from jinja2 import Environment, FileSystemLoader
 
 load_dotenv()
+
+def _secret(key: str, default: str = "") -> str:
+    """Read from st.secrets first (Streamlit Cloud), then env vars, then default."""
+    try:
+        return st.secrets.get(key, os.getenv(key, default))
+    except Exception:
+        return os.getenv(key, default)
 
 from process_data import (
     load_file,
@@ -45,19 +53,74 @@ from send_emails import (
 )
 
 # ── Page config ──────────────────────────────────────────────────────────────
-screening_name = os.getenv("SCREENING_NAME", "Screening QI")
-team_label     = os.getenv("TEAM_LABEL", "QI Team · Your Institution")
-
 st.set_page_config(
-    page_title=screening_name,
+    page_title="QI Email Pipeline",
     page_icon="📊",
     layout="wide",
 )
+
+# ── Settings sidebar ──────────────────────────────────────────────────────────
+with st.sidebar:
+    st.header("⚙️ Settings")
+    st.caption("Configure your QI project. Changes apply immediately — no code editing needed.")
+
+    with st.expander("🏷️ Branding", expanded=True):
+        cfg_screening_name = st.text_input(
+            "QI project name",
+            value=_secret("SCREENING_NAME", "Screening QI"),
+            help="Appears in the app title, email subject line, and email header.",
+        )
+        cfg_team_label = st.text_input(
+            "Team / institution label",
+            value=_secret("TEAM_LABEL", "QI Team · Your Institution"),
+            help="Shown in the email header and footer (e.g. 'Rheumatology QI · Children's Hospital').",
+        )
+        cfg_from_name = st.text_input(
+            "Sender display name",
+            value=_secret("FROM_NAME", "Screening QI Team"),
+            help="The 'From' name recipients see (not the email address).",
+        )
+
+    with st.expander("📧 Email content"):
+        cfg_target_rate = st.number_input(
+            "Screening target (%)",
+            min_value=1, max_value=100,
+            value=int(_secret("TARGET_RATE", "80")),
+            help="The target completion rate shown in the email (green ≥ target, amber ≥ 75% of target, red below).",
+        )
+        cfg_dashboard_url = st.text_input(
+            "Dashboard URL (optional)",
+            value=_secret("DASHBOARD_URL", ""),
+            help="If provided, a link appears in the email nudge section.",
+        )
+
+    with st.expander("🔌 SMTP (advanced)"):
+        cfg_smtp_host = st.text_input(
+            "SMTP server",
+            value=_secret("SMTP_HOST", "smtp.office365.com"),
+        )
+        cfg_smtp_port = st.number_input(
+            "SMTP port",
+            min_value=1, max_value=65535,
+            value=int(_secret("SMTP_PORT", "587")),
+        )
+
+# Aliases used throughout the app
+screening_name = cfg_screening_name
+team_label     = cfg_team_label
 
 st.title(f"{screening_name} — Email Pipeline")
 st.caption(team_label)
 
 tab1, tab2, tab3 = st.tabs(["📊 Process Data", "📧 Preview Email", "🚀 Send Emails"])
+
+# Default reporting period: the two calendar months before today
+_today = datetime.today()
+_m1 = _today - relativedelta(months=2)
+_m2 = _today - relativedelta(months=1)
+DEFAULT_PERIOD = (
+    f"{_m1.strftime('%B')} – {_m2.strftime('%B')} {_m2.year}"
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -176,7 +239,7 @@ with tab1:
         col1, col2, col3 = st.columns(3)
         col1.metric("Providers", len(summary))
         col2.metric("Total Patients", int(summary["eligible_patients"].sum()))
-        col3.metric("Team Average", f"{team_avg:.1f}%", delta=f"{team_avg - 80:.1f}% vs 80% target")
+        col3.metric("Team Average", f"{team_avg:.1f}%", delta=f"{team_avg - cfg_target_rate:.1f}% vs {cfg_target_rate}% target")
 
         st.dataframe(
             display.style.background_gradient(subset=["Rate (%)"], cmap="RdYlGn", vmin=0, vmax=100),
@@ -210,7 +273,7 @@ with tab2:
     with col2:
         period_preview = st.text_input(
             "Reporting period",
-            placeholder="e.g. May–Jun 2026",
+            value=DEFAULT_PERIOD,
             key="period_preview",
         )
 
@@ -234,7 +297,14 @@ with tab2:
                 group_stats = compute_group_stats(merged_preview)
                 max_rate  = merged_preview["screening_rate"].max()
                 is_top    = (row["screening_rate"] == max_rate and max_rate > 0)
-                context   = build_context(row, group_stats, period_preview, is_top_performer=is_top)
+                context   = build_context(
+                    row, group_stats, period_preview,
+                    is_top_performer=is_top,
+                    screening_name=cfg_screening_name,
+                    team_label=cfg_team_label,
+                    dashboard_url=cfg_dashboard_url,
+                    target_rate=cfg_target_rate,
+                )
                 html      = render_email(context, env)
                 components.html(html, height=900, scrolling=True)
     else:
@@ -255,7 +325,7 @@ with tab3:
     with col2:
         period_send = st.text_input(
             "Reporting period",
-            placeholder="e.g. May–Jun 2026",
+            value=DEFAULT_PERIOD,
             key="period_send",
         )
 
@@ -329,11 +399,23 @@ with tab3:
                 status_area.info(f"Sending to {r['Provider']}…")
 
                 is_top  = (row["screening_rate"] == max_rate and max_rate > 0)
-                context = build_context(row, group_stats, period_send, is_top_performer=is_top)
+                context = build_context(
+                    row, group_stats, period_send,
+                    is_top_performer=is_top,
+                    screening_name=cfg_screening_name,
+                    team_label=cfg_team_label,
+                    dashboard_url=cfg_dashboard_url,
+                    target_rate=cfg_target_rate,
+                )
                 html    = render_email(context, env)
 
                 try:
-                    send_email(row["email"], subject, html, smtp_password)
+                    send_email(
+                        row["email"], subject, html, smtp_password,
+                        from_name=cfg_from_name,
+                        smtp_host=cfg_smtp_host,
+                        smtp_port=cfg_smtp_port,
+                    )
                     record_send(pid, period_send)
                     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
                     results.append({"Provider": r["Provider"], "Email": r["Email"], "Status": "✓ Sent", "Time": ts})
