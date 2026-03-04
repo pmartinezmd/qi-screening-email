@@ -31,7 +31,7 @@ PROVIDER_LIST = "data/provider_list.csv"
 SEND_LOG      = "data/send_log.csv"
 TEMPLATE_DIR  = "templates"
 TEMPLATE_FILE = "email_template.html"
-TARGET_RATE   = 80
+TARGET_RATE   = int(os.getenv("TARGET_RATE", 80))
 
 
 def load_send_log() -> set[tuple[str, str]]:
@@ -77,10 +77,10 @@ def compute_group_stats(merged: pd.DataFrame) -> dict:
     return stats
 
 
-def rate_color(rate: float) -> str:
-    if rate >= TARGET_RATE:
+def rate_color(rate: float, target_rate: int = TARGET_RATE) -> str:
+    if rate >= target_rate:
         return "#3a7d44"            # green — at or above target
-    elif rate >= TARGET_RATE * 0.75:
+    elif rate >= target_rate * 0.75:
         return "#e8a838"            # amber — within 25% of target
     else:
         return "#c1440e"            # red — below 75% of target
@@ -102,9 +102,15 @@ COMPONENT_LABELS = {
 
 
 def build_context(row: pd.Series, group_stats: dict, period_label: str,
-                  is_top_performer: bool = False) -> dict:
+                  is_top_performer: bool = False,
+                  screening_name: str | None = None,
+                  team_label: str | None = None,
+                  dashboard_url: str | None = None,
+                  target_rate: int | None = None) -> dict:
     ptype      = row["provider_type"]
     other_type = "fellow" if ptype == "attending" else "attending"
+
+    _target_rate = target_rate if target_rate is not None else TARGET_RATE
 
     missing = {k: missing_count_for(row, k) for k in COMPONENT_KEYS}
     sorted_missing = sorted(missing.items(), key=lambda x: -x[1])
@@ -118,7 +124,7 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "screening_rate":      row["screening_rate"],
         "eligible_patients":   int(row["eligible_patients"]),
         "screened_patients":   int(row["screened_patients"]),
-        "rate_color":          rate_color(row["screening_rate"]),
+        "rate_color":          rate_color(row["screening_rate"], _target_rate),
         "provider_type_label": ptype.capitalize() + "s",
         "group_avg":           group_stats[ptype]["avg"],
         "group_n":             group_stats[ptype]["n"],
@@ -129,9 +135,10 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "top_missing_2":       COMPONENT_LABELS[top2_key] if top2_key else None,
         "missing_count_1":     missing[top1_key] if top1_key else 0,
         "missing_count_2":     missing[top2_key] if top2_key else 0,
-        "dashboard_url":       os.getenv("DASHBOARD_URL", ""),
-        "team_label":          os.getenv("TEAM_LABEL", "QI Team · Your Institution"),
-        "screening_name":      os.getenv("SCREENING_NAME", "Screening QI"),
+        "target_rate":         _target_rate,
+        "dashboard_url":       dashboard_url if dashboard_url is not None else os.getenv("DASHBOARD_URL", ""),
+        "team_label":          team_label if team_label is not None else os.getenv("TEAM_LABEL", "QI Team · Your Institution"),
+        "screening_name":      screening_name if screening_name is not None else os.getenv("SCREENING_NAME", "Screening QI"),
         "is_top_performer":    is_top_performer,
     }
 
@@ -141,16 +148,22 @@ def render_email(context: dict, env: Environment) -> str:
     return template.render(**context)
 
 
-def send_email(to_email: str, subject: str, html_body: str, smtp_password: str):
+def send_email(to_email: str, subject: str, html_body: str, smtp_password: str,
+               from_name: str | None = None,
+               smtp_host: str | None = None,
+               smtp_port: int | None = None):
     smtp_user = os.getenv("SMTP_USER")
+    _from_name = from_name or os.getenv("FROM_NAME", "Screening QI Team")
+    _smtp_host = smtp_host or os.getenv("SMTP_HOST", "smtp.office365.com")
+    _smtp_port = smtp_port or int(os.getenv("SMTP_PORT", 587))
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = f"{os.getenv('FROM_NAME', 'Screening QI Team')} <{smtp_user}>"
+    msg["From"]    = f"{_from_name} <{smtp_user}>"
     msg["To"]      = to_email
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP(os.getenv("SMTP_HOST", "smtp.office365.com"),
-                      int(os.getenv("SMTP_PORT", 587))) as server:
+    with smtplib.SMTP(_smtp_host, _smtp_port) as server:
         server.ehlo()
         server.starttls()
         server.login(smtp_user, smtp_password)
