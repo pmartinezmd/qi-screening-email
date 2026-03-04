@@ -46,6 +46,7 @@ def load_send_log() -> set[tuple[str, str]]:
 def record_send(provider_id: str, period: str) -> None:
     """Append a successful send to the log."""
     path = Path(SEND_LOG)
+    path.parent.mkdir(parents=True, exist_ok=True)
     write_header = not path.exists()
     with path.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["provider_id", "period", "sent_at"])
