@@ -66,12 +66,16 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def compute_group_stats(merged: pd.DataFrame) -> dict:
-    """Compute screening rate averages by provider type (attending / fellow).
-    Falls back to overall average when provider_type column is absent.
+    """Compute actual screening rate per provider type (total screened / total eligible).
+    Falls back to overall rate when provider_type column is absent.
     """
+    def _rate(g: pd.DataFrame) -> float:
+        total = g["eligible_patients"].sum()
+        return round(g["screened_patients"].sum() / total * 100, 1) if total > 0 else 0.0
+
     stats = {}
     if "provider_type" not in merged.columns:
-        overall = round(merged["screening_rate"].mean(), 1) if len(merged) > 0 else 0.0
+        overall = _rate(merged)
         for ptype in ("attending", "fellow"):
             stats[ptype] = {"avg": overall, "n": len(merged)}
         return stats
@@ -79,7 +83,7 @@ def compute_group_stats(merged: pd.DataFrame) -> dict:
     for ptype in ("attending", "fellow"):
         group = merged[merged["provider_type"] == ptype]
         stats[ptype] = {
-            "avg": round(group["screening_rate"].mean(), 1) if len(group) > 0 else 0.0,
+            "avg": _rate(group) if len(group) > 0 else 0.0,
             "n":   len(group),
         }
     return stats
@@ -124,7 +128,8 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
                   screening_name: str | None = None,
                   team_label: str | None = None,
                   dashboard_url: str | None = None,
-                  target_rate: int | None = None) -> dict:
+                  target_rate: int | None = None,
+                  comp_count: int = 0) -> dict:
     ptype      = _na(row.get("provider_type"), "attending") or "attending"
     other_type = "fellow" if ptype == "attending" else "attending"
 
@@ -132,6 +137,19 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
 
     # display_name falls back to provider_id if the column is absent
     display_name = _na(row.get("display_name")) or row.get("provider_id", "Provider")
+
+    # Parse "Lipids:75.0;HbA1c:60.0;..." into a list of dicts with label, rate, color
+    comp_rates_raw = _na(row.get("comp_rates"), "") or ""
+    comp_rates = []
+    for item in comp_rates_raw.split(";"):
+        item = item.strip()
+        if ":" in item:
+            label, rate_str = item.rsplit(":", 1)
+            try:
+                r = float(rate_str)
+                comp_rates.append({"label": label.strip(), "rate": r, "color": rate_color(r, _target_rate)})
+            except ValueError:
+                pass
 
     return {
         "display_name":        display_name,
@@ -156,6 +174,8 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "screening_name":      screening_name if screening_name is not None else os.getenv("SCREENING_NAME", "Screening QI"),
         "is_top_performer":    is_top_performer,
         "patients_to_screen":  _na(row.get("patients_to_screen"), "") or "",
+        "comp_count":          comp_count,
+        "comp_rates":          comp_rates,
     }
 
 
