@@ -601,6 +601,7 @@ with tab2:
                     team_label=cfg_team_label,
                     dashboard_url=cfg_dashboard_url,
                     target_rate=cfg_target_rate,
+                    comp_count=len(cfg_components_df),
                 )
                 html      = render_email(context, env)
                 components.html(html, height=900, scrolling=True)
@@ -703,6 +704,7 @@ with tab3:
                     team_label=cfg_team_label,
                     dashboard_url=cfg_dashboard_url,
                     target_rate=cfg_target_rate,
+                    comp_count=len(cfg_components_df),
                 )
                 html    = render_email(context, env)
 

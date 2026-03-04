@@ -124,7 +124,8 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
                   screening_name: str | None = None,
                   team_label: str | None = None,
                   dashboard_url: str | None = None,
-                  target_rate: int | None = None) -> dict:
+                  target_rate: int | None = None,
+                  comp_count: int = 0) -> dict:
     ptype      = _na(row.get("provider_type"), "attending") or "attending"
     other_type = "fellow" if ptype == "attending" else "attending"
 
@@ -156,6 +157,7 @@ def build_context(row: pd.Series, group_stats: dict, period_label: str,
         "screening_name":      screening_name if screening_name is not None else os.getenv("SCREENING_NAME", "Screening QI"),
         "is_top_performer":    is_top_performer,
         "patients_to_screen":  _na(row.get("patients_to_screen"), "") or "",
+        "comp_count":          comp_count,
     }
 
 
