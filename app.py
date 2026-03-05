@@ -202,8 +202,12 @@ DEFAULT_PERIOD = (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def load_providers() -> pd.DataFrame | None:
-    """Load provider list from st.secrets, then fall back to local CSV."""
+def load_providers(require: bool = False) -> pd.DataFrame | None:
+    """Load provider list from st.secrets, then fall back to local CSV.
+
+    If require=True, shows a blocking error when the list is missing.
+    If require=False (default), returns None silently so callers can proceed without it.
+    """
     try:
         secret_providers = st.secrets.get("providers", None)
         if secret_providers:
@@ -213,10 +217,11 @@ def load_providers() -> pd.DataFrame | None:
 
     provider_path = Path(PROVIDER_LIST)
     if not provider_path.exists():
-        st.error(
-            f"`{PROVIDER_LIST}` not found and no `[[providers]]` entries in Secrets. "
-            "Add providers to Streamlit Secrets or upload the CSV."
-        )
+        if require:
+            st.error(
+                f"`{PROVIDER_LIST}` not found and no `[[providers]]` entries in Secrets. "
+                "Add providers to Streamlit Secrets or upload the CSV."
+            )
         return None
     return pd.read_csv(provider_path)
 
@@ -231,7 +236,7 @@ def load_summary_and_providers(summary_source=None):
     else:
         summary = pd.read_csv(summary_source)
 
-    providers = load_providers()
+    providers = load_providers(require=True)
     if providers is None:
         return None
     # Drop provider columns already present in the summary CSV (from the processing merge)
@@ -472,6 +477,11 @@ with tab1:
 
         # ── Detect format ─────────────────────────────────────────────────────
         providers_df = load_providers()
+        if providers_df is None:
+            st.info(
+                f"Provider list (`{PROVIDER_LIST}`) not found — screening rates will be computed for all providers. "
+                "To filter to specific providers and include email addresses, add `data/provider_list.csv`."
+            )
 
         if "Summary" in sheets:
             # ── Per-component patient-level format ────────────────────────────
