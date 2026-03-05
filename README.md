@@ -22,7 +22,7 @@ A self-contained folder distributed via USB or shared drive for colleagues witho
 
 | | |
 |---|---|
-| **Who** | Non-programmer colleagues on HSS workstations |
+| **Who** | Non-programmer colleagues on institutional workstations |
 | **How** | Double-click `INSTALL.bat` once → double-click the Desktop shortcut to run |
 | **Benefits** | No admin rights needed, no Python installation, one-click updates via `UPDATE.bat` |
 | **Requirements** | Windows, internet connection for first-time setup only |
@@ -211,7 +211,7 @@ Only `processed_summary.csv` (aggregate statistics, no PHI) is transferred to th
 
 | Environment | Allowed? | Notes |
 |---|---|---|
-| Local — HSS workstation | Yes | Recommended. Data never leaves the machine. |
+| Local — institutional workstation | Yes | Recommended. Data never leaves the machine. |
 | Local — personal computer | With caution | Only if the device is covered by your institution's BAA and data security policy. |
 | Streamlit Cloud / any public cloud | No | The app will display a red warning banner if it detects a cloud environment. Do not upload patient data. |
 

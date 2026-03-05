@@ -61,7 +61,7 @@ st.set_page_config(
 
 # ── Runtime environment indicator ─────────────────────────────────────────────
 _is_cloud = os.getenv("HOME") == "/home/appuser"   # set by Streamlit Cloud runtime
-_env_label  = "☁️ Streamlit Cloud" if _is_cloud else "🖥️ Local (HSS workstation)"
+_env_label  = "☁️ Streamlit Cloud" if _is_cloud else "🖥️ Local (institutional workstation)"
 _env_color  = "red"                if _is_cloud else "green"
 
 # ── Settings sidebar ──────────────────────────────────────────────────────────
@@ -185,9 +185,9 @@ st.title(f"{screening_name} — Email Pipeline")
 st.caption(team_label)
 
 if _is_cloud:
-    st.error("🚨 **This app is running on Streamlit Cloud.** Do NOT upload patient data here — run locally on the HSS workstation instead.")
+    st.error("🚨 **This app is running on Streamlit Cloud.** Do NOT upload patient data here — run locally on the institutional workstation instead.")
 else:
-    st.success("🏥 **Running locally on HSS workstation.** Patient data stays on this machine.")
+    st.success("🏥 **Running locally on institutional workstation.** Patient data stays on this machine.")
 
 tab1, tab2, tab3 = st.tabs(["📊 Process Data", "📧 Preview Email", "🚀 Send Emails"])
 
