@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from send_emails import (
     SUMMARY_FILE, PROVIDER_LIST, TEMPLATE_DIR, TEMPLATE_FILE,
@@ -35,7 +35,7 @@ def main():
     merged    = summary.merge(providers, on="provider_id", how="inner")
     group_stats = compute_group_stats(merged)
 
-    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html"]))
 
     if args.all:
         subset = merged

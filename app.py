@@ -18,7 +18,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 load_dotenv()
 
@@ -174,6 +174,8 @@ team_label     = cfg_team_label
 
 st.title(f"{screening_name} — Email Pipeline")
 st.caption(team_label)
+
+st.error("🏥 **Run this app on the institutional workstation (HSS) only.** Patient data must not leave the institutional machine.")
 
 tab1, tab2, tab3 = st.tabs(["📊 Process Data", "📧 Preview Email", "🚀 Send Emails"])
 
@@ -387,7 +389,6 @@ def rate_badge(rate):
 
 # ── Tab 1: Process Data ──────────────────────────────────────────────────────
 with tab1:
-    st.error("🏥 **Run this step on the institutional workstation only.** Patient data must not leave the institutional machine.")
 
     # ── Download template ─────────────────────────────────────────────────────
     with st.expander("📥 Step 0 — Download the input template", expanded=True):
@@ -598,7 +599,7 @@ with tab2:
             if not period_preview:
                 st.warning("Enter a reporting period label first.")
             else:
-                env       = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+                env       = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html"]))
                 row       = merged_preview[merged_preview["provider_id"] == selected_provider].iloc[0]
                 group_stats = compute_group_stats(merged_preview)
                 max_rate  = merged_preview["screening_rate"].max()
@@ -690,7 +691,7 @@ with tab3:
         if st.button(f"Send to {len(selected_pids)} provider(s)", type="primary", disabled=not can_send):
             os.environ["SMTP_USER"] = from_address
             subject     = f"{screening_name} Update · {period_send}"
-            env         = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+            env         = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html"]))
             group_stats = compute_group_stats(merged_send)
             max_rate    = merged_send["screening_rate"].max()
 

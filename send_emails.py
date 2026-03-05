@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 load_dotenv()
 
@@ -216,7 +216,7 @@ def main():
 
     merged, _ = load_data()
     group_stats = compute_group_stats(merged)
-    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR))
+    env = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html"]))
 
     if args.provider:
         subset = merged[merged["provider_id"] == args.provider]
