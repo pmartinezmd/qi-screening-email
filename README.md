@@ -5,6 +5,32 @@ Processes encrypted EMR exports and sends personalized HTML emails to each provi
 
 ---
 
+## Two ways to use this app
+
+### Option A — Developer setup (original)
+For team members with Python experience who work directly in the repository.
+
+| | |
+|---|---|
+| **Who** | QI team lead, developer |
+| **How** | `pip install -r requirements.txt` → `streamlit run app.py` |
+| **Benefits** | Full control, easy to modify code and templates, can use CLI tools |
+| **Requirements** | Python installed, comfortable with terminal |
+
+### Option B — Portable app (no install, no admin rights)
+A self-contained folder distributed via USB or shared drive for colleagues without a programming background.
+
+| | |
+|---|---|
+| **Who** | Non-programmer colleagues on HSS workstations |
+| **How** | Double-click `INSTALL.bat` once → double-click the Desktop shortcut to run |
+| **Benefits** | No admin rights needed, no Python installation, one-click updates via `UPDATE.bat` |
+| **Requirements** | Windows, internet connection for first-time setup only |
+
+> The portable folder (`portable_app/`) is excluded from this repository because it includes a bundled Python runtime. Distribute it via USB or a shared institutional drive.
+
+---
+
 ## How it works
 
 ```
@@ -26,7 +52,7 @@ Run process_data.py (or Tab 1 in the app)
 
 ---
 
-## Setup
+## Setup (Option A — Developer)
 
 ### 1. Install dependencies
 
@@ -52,8 +78,7 @@ SCREENING_NAME=CV Risk Screening QI
 DASHBOARD_URL=                         # optional
 ```
 
-> Neither the Excel password nor the SMTP password is stored in `.env`.
-> Both are prompted at runtime.
+> Neither the Excel password nor the SMTP password is stored in `.env`. Both are prompted at runtime.
 
 ### 3. Create `data/provider_list.csv`
 
@@ -78,6 +103,14 @@ Open `process_data.py` and update the **CONFIGURE** sections:
 
 ---
 
+## Setup (Option B — Portable app)
+
+1. Copy the `portable_app/` folder to the target computer (USB or shared drive)
+2. Double-click **`INSTALL.bat`** — downloads Python (~25 MB), installs packages, creates a Desktop shortcut
+3. To apply future updates: double-click **`UPDATE.bat`** after being notified of a new version
+
+---
+
 ## Running the app (Streamlit)
 
 ```bash
@@ -89,8 +122,10 @@ Opens at `http://localhost:8501` with three tabs:
 | Tab | Purpose | Run on |
 |---|---|---|
 | 📊 Process Data | Upload EMR export, enter password, generate summary | Institutional workstation |
-| 📧 Preview Email | Upload summary, preview any provider's email | Personal laptop |
-| 🚀 Send Emails | Upload summary, send to selected providers | Personal laptop |
+| 📧 Preview Email | Upload summary, preview any provider's email | Any machine |
+| 🚀 Send Emails | Upload summary, send to selected providers | Any machine |
+
+The app detects whether it is running locally or on Streamlit Cloud and displays a warning banner accordingly. **Never upload patient data to a cloud-hosted instance.**
 
 ---
 
@@ -106,14 +141,14 @@ python process_data.py --input data/export.xlsx --output data/processed_summary.
 
 You will be prompted for the Excel password. The raw `.xlsx` is deleted automatically after processing.
 
-### Preview emails (personal laptop)
+### Preview emails
 
 ```bash
 python preview.py --provider "SMITH, JANE A" --period "May–Jun 2026"
 python preview.py --all --period "May–Jun 2026"
 ```
 
-### Send emails (personal laptop)
+### Send emails
 
 ```bash
 python send_emails.py --period "May–Jun 2026"
@@ -143,20 +178,58 @@ All data files in `data/` and `output/` are gitignored. No patient data can be a
 
 Each provider receives:
 
-- **Rate card** — their screening completion rate, color-coded against the 80% target
+- **Rate card** — their screening completion rate, color-coded against the target
 - **Top performer banner** — shown only to the highest-scoring provider this period
-- **Comparison bars** — their rate vs. attending average, fellow average, and 80% target
+- **Comparison bars** — their rate vs. attending average, fellow average, and target
+- **Component breakdown** — completion rate per individual screening component
 - **Top 2 missing components** — the most commonly unscreened items across their patients
 - **Nudge** — a short call to action with a link to the dashboard (if configured)
-- **FAQ** — answers to common questions about eligibility and data
 
 ---
 
-## Privacy safeguards
+## Security and privacy
 
-1. **No passwords stored** — Excel and SMTP passwords are prompted at runtime only
-2. **Raw EMR export auto-deleted** — `process_data.py` deletes the input file immediately after writing the summary
-3. **PHI stays on the institutional workstation** — only the aggregate `processed_summary.csv` is transferred
-4. **All data files gitignored** — no patient data or credentials can be committed
-5. **Duplicate-send guard** — `send_log.csv` prevents accidental duplicate emails per period
-6. **Recipient confirmation** — the CLI requires explicit confirmation before sending
+### What data is handled
+
+- **EMR export (.xlsx)** — contains patient-level PHI (names, diagnoses, visit data). This file lives only on the institutional workstation and is deleted automatically by `process_data.py` immediately after processing.
+- **processed_summary.csv** — contains provider-level aggregates only (counts, rates, missing component labels). No patient names or IDs. This is the only file that leaves the institutional workstation.
+- **provider_list.csv** — contains provider names and email addresses. Not committed to version control.
+
+### What leaves the workstation
+
+Only `processed_summary.csv` (aggregate statistics, no PHI) is transferred to the sending machine. No patient-identifiable information is included.
+
+### Credentials
+
+| Credential | Stored? | How handled |
+|---|---|---|
+| EMR Excel password | Never | Prompted at runtime, held in memory only |
+| SMTP password | Never | Prompted at runtime, held in memory only |
+| SMTP username | `.env` only | Not committed (gitignored) |
+
+### Deployment rules
+
+| Environment | Allowed? | Notes |
+|---|---|---|
+| Local — HSS workstation | Yes | Recommended. Data never leaves the machine. |
+| Local — personal computer | With caution | Only if the device is covered by your institution's BAA and data security policy. |
+| Streamlit Cloud / any public cloud | No | The app will display a red warning banner if it detects a cloud environment. Do not upload patient data. |
+
+### Code safeguards
+
+1. **Jinja2 HTML autoescape enabled** — prevents injection from provider names or patient data rendered in email templates
+2. **Raw EMR export auto-deleted** — `process_data.py` removes the input file immediately after writing the summary
+3. **All data files gitignored** — `.gitignore` blocks all `.csv`, `.xlsx`, `.xls`, `output/`, and `winpython/` from being committed
+4. **Duplicate-send guard** — `send_log.csv` prevents accidental duplicate emails per period
+5. **Recipient confirmation** — the CLI and app require explicit confirmation before any email is sent
+6. **Cloud detection** — the app detects Streamlit Cloud (`HOME=/home/appuser`) and blocks use with a visible error banner
+
+### HIPAA considerations
+
+This tool is designed for use within an institutional environment covered by your organization's data security policies. Before use, confirm with your compliance office or IRB that:
+
+- The workstation used for data processing is covered under your institution's security plan
+- Any inter-device file transfer (e.g., USB, shared drive) complies with your data transfer policy
+- The email system used for sending (SMTP server) is approved for provider-facing communications
+
+Patient data is **never** transmitted to GitHub, Streamlit Cloud, or any external service by this application.
