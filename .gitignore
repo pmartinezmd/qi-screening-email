@@ -8,6 +8,12 @@ data/*.xls
 data/*.csv
 output/
 
+# Portable app bundle (USB distribution) — not committed
+portable_app/
+
+# WinPython portable distribution — too large to commit
+winpython/
+
 # Python
 __pycache__/
 *.pyc
