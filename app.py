@@ -59,10 +59,19 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── Runtime environment indicator ─────────────────────────────────────────────
+_is_cloud = os.getenv("HOME") == "/home/appuser"   # set by Streamlit Cloud runtime
+_env_label  = "☁️ Streamlit Cloud" if _is_cloud else "🖥️ Local (HSS workstation)"
+_env_color  = "red"                if _is_cloud else "green"
+
 # ── Settings sidebar ──────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Settings")
     st.caption("Configure your QI project. Changes apply immediately — no code editing needed.")
+    st.markdown(
+        f'<p style="font-size:11px;color:{_env_color};font-weight:600;margin:0;">⬤ Running on: {_env_label}</p>',
+        unsafe_allow_html=True,
+    )
 
     with st.expander("🏷️ Branding", expanded=True):
         cfg_screening_name = st.text_input(
@@ -175,7 +184,10 @@ team_label     = cfg_team_label
 st.title(f"{screening_name} — Email Pipeline")
 st.caption(team_label)
 
-st.error("🏥 **Run this app on the institutional workstation (HSS) only.** Patient data must not leave the institutional machine.")
+if _is_cloud:
+    st.error("🚨 **This app is running on Streamlit Cloud.** Do NOT upload patient data here — run locally on the HSS workstation instead.")
+else:
+    st.success("🏥 **Running locally on HSS workstation.** Patient data stays on this machine.")
 
 tab1, tab2, tab3 = st.tabs(["📊 Process Data", "📧 Preview Email", "🚀 Send Emails"])
 
