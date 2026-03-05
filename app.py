@@ -52,6 +52,9 @@ from send_emails import (
     SUMMARY_FILE,
 )
 
+# ── Ensure data directory exists ─────────────────────────────────────────────
+Path("data").mkdir(exist_ok=True)
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="QI Email Pipeline",
@@ -113,6 +116,33 @@ with st.sidebar:
             min_value=1, max_value=65535,
             value=int(_secret("SMTP_PORT", "587")),
         )
+
+    with st.expander("👥 Provider list", expanded=not Path("data/provider_list.csv").exists()):
+        _provider_path = Path("data/provider_list.csv")
+        if _provider_path.exists():
+            st.success(f"Provider list loaded ({len(pd.read_csv(_provider_path))} providers)")
+        else:
+            st.warning("No provider list found. Upload one to enable email previews and sending.")
+        st.caption(
+            "CSV with columns: `provider_id`, `display_name`, `email`. "
+            "The `provider_id` must match the provider name exactly as it appears in your EMR export."
+        )
+        _uploaded_providers = st.file_uploader(
+            "Upload provider_list.csv",
+            type=["csv"],
+            key="sidebar_provider_upload",
+        )
+        if _uploaded_providers is not None:
+            try:
+                _prov_df = pd.read_csv(_uploaded_providers)
+                _missing = [c for c in ["provider_id", "display_name", "email"] if c not in _prov_df.columns]
+                if _missing:
+                    st.error(f"Missing required columns: {', '.join(_missing)}")
+                else:
+                    _prov_df.to_csv(_provider_path, index=False)
+                    st.success(f"Saved — {len(_prov_df)} providers loaded. Refresh the page to apply.")
+            except Exception as e:
+                st.error(f"Could not read CSV: {e}")
 
     with st.expander("🧬 Screening components"):
         st.caption(
