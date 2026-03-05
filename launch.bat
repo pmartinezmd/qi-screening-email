@@ -1,4 +1,10 @@
 @echo off
+:: If not already running minimized, re-launch minimized and exit this window
+if "%~1"=="bg" goto :run
+start /min "" cmd /c "%~f0" bg
+exit /b 0
+
+:run
 title QI Screening Email Pipeline
 
 :: Change to the folder where this script lives
@@ -56,5 +62,3 @@ echo Starting app — your browser will open automatically.
 echo Close this window to stop the app.
 echo.
 "%PYTHON%" -m streamlit run app.py --server.headless false
-
-pause
